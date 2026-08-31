@@ -133,7 +133,6 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(config.baseUrl, "https://api.openai.com/v1")
         XCTAssertEqual(config.endpoint, "chat/completions")
     }
-}
 
     // buildDetailPath：根 → 中间 → 叶 的分层链路回溯
     func testBuildDetailPathWalksParentChainRootToLeaf() {
@@ -148,3 +147,4 @@ final class ModelsTests: XCTestCase {
         // 缺失或孤立 detail 不应死循环
         XCTAssertEqual(buildDetailPath(details: details, detailId: "missing"), [])
     }
+}
