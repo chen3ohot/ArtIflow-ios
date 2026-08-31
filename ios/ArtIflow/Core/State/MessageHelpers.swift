@@ -371,7 +371,7 @@ func routeRequestFailure(throwable: Error, fallback: String = "网络不可用",
 }
 
 func deliverTokenAwareResult<T>(
-    result: Result<T, Error>,
+    _ result: Result<T, Error>,
     requestToken: Int64,
     activeToken: Int64,
     onStale: () -> Void,
@@ -556,7 +556,7 @@ func summarizeKnowledgeGapInsights(_ insights: [KnowledgeGapInsight]) -> String 
 }
 
 private extension String {
-    func ifBlank(_ fallback: String) -> String {
-        return isEmpty ? fallback : self
+    func ifBlank(_ fallback: () -> String) -> String {
+        return isEmpty ? fallback() : self
     }
 }

@@ -331,7 +331,7 @@ struct CoachRecommendedQuestion: Equatable {
     let reason: String
     let prompt: String
     let basis: String
-    let anchorSavedQuestionId: String?
+    var anchorSavedQuestionId: String? = nil
 }
 
 struct CoachDailyDigest: Equatable {

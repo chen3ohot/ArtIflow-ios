@@ -391,7 +391,7 @@ final class AppState: ObservableObject {
 }
 
 private extension String {
-    func ifBlank(_ fallback: String) -> String {
-        return isEmpty ? fallback : self
+    func ifBlank(_ fallback: () -> String) -> String {
+        return isEmpty ? fallback() : self
     }
 }

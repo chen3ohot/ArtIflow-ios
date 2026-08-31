@@ -622,7 +622,7 @@ func knowledgePointsToJson(_ knowledgePoints: [String: Int]) -> [String: Any] {
 }
 
 private extension String {
-    func ifBlank(_ fallback: String) -> String {
-        return isEmpty ? fallback : self
+    func ifBlank(_ fallback: () -> String) -> String {
+        return isEmpty ? fallback() : self
     }
 }

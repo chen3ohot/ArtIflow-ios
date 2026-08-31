@@ -399,13 +399,13 @@ private func buildCoachRecommendedQuestions(focusAreas: [CoachFocusArea], savedQ
         let title = "\(area.point) · 典型题"
         let reason: String
         if let saved = anchor {
-            reason = "参考你之前卡住的题《\(normalizeCoachSnippet(saved.question, 16))》：\(area.diagnosis)"
+            reason = "参考你之前卡住的题《\(normalizeCoachSnippet(saved.question, maxLen: 16))》：\(area.diagnosis)"
         } else {
             reason = area.diagnosis
         }
         var prompt = "请给我一道围绕“\(area.point)”的\(difficultyHint)典型题，重点训练：\(actionHint)。先只给题目，不要答案；等我作答后再批改，并指出我漏掉的知识点。"
         if let saved = anchor {
-            prompt += "可以参考我之前容易错的方向：\(normalizeCoachSnippet(saved.question, 28))。"
+            prompt += "可以参考我之前容易错的方向：\(normalizeCoachSnippet(saved.question, maxLen: 28))。"
         }
         return CoachRecommendedQuestion(
             id: "coach-rec-\(nowMillis)-\(index)-\(area.point.hashValue)",
@@ -419,7 +419,7 @@ private func buildCoachRecommendedQuestions(focusAreas: [CoachFocusArea], savedQ
 }
 
 private func buildCoachRecommendationBasis(area: CoachFocusArea, anchor: SavedQuestion?, actionHint: String) -> String {
-    let anchorSnippet = anchor?.question.flatMap { normalizeCoachSnippet($0, 18) } ?? ""
+    let anchorSnippet = anchor?.question.flatMap { normalizeCoachSnippet($0, maxLen: 18) } ?? ""
     var output = "这道题主要围绕“\(area.point)”，因为你今天最集中暴露的问题是：\(normalizeCoachSentence(area.diagnosis))。"
     if !actionHint.isEmpty {
         output += "训练重点放在：\(actionHint)。"
@@ -460,7 +460,7 @@ private func buildCoachContextText(
     }.joined(separator: "\n").ifBlank { "- 暂无明显集中薄弱点" }
 
     let savedSummary = savedQuestions.prefix(3).map { saved in
-        "- \(normalizeCoachSnippet(saved.question, 26))"
+        "- \(normalizeCoachSnippet(saved.question, maxLen: 26))"
     }.joined(separator: "\n").ifBlank { "- 暂无收藏题" }
 
     let digestSummary: String
@@ -489,7 +489,7 @@ private func buildCoachContextText(
 }
 
 private extension String {
-    func ifBlank(_ fallback: String) -> String {
-        return isEmpty ? fallback : self
+    func ifBlank(_ fallback: () -> String) -> String {
+        return isEmpty ? fallback() : self
     }
 }

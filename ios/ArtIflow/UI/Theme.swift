@@ -13,8 +13,8 @@ enum AppTheme {
     static let ankiTint = Color(red: 0.78, green: 0.49, blue: 0.20)
 }
 
-extension Color {
-    static let appBackground = AppTheme.background
-    static let appPrimary = AppTheme.primaryText
-    static let appSecondary = AppTheme.secondaryText
+extension ShapeStyle where Self == Color {
+    static var appBackground: Color { AppTheme.background }
+    static var appPrimary: Color { AppTheme.primaryText }
+    static var appSecondary: Color { AppTheme.secondaryText }
 }

@@ -526,8 +526,8 @@ private func makeRegex(_ pattern: String) -> NSRegularExpression {
 }
 
 private extension String {
-    func ifBlank(_ fallback: String) -> String {
-        return isEmpty ? fallback : self
+    func ifBlank(_ fallback: () -> String) -> String {
+        return isEmpty ? fallback() : self
     }
 }
 

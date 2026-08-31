@@ -318,7 +318,7 @@ final class ViewModelSupportTests: XCTestCase {
         var staleCalled = false
         var successCalled = false
         var failureCalled = false
-        deliverTokenAwareResult(result: Result<String, Error>.success("ok"), requestToken: 10, activeToken: 11,
+        deliverTokenAwareResult(Result<String, Error>.success("ok"), requestToken: 10, activeToken: 11,
             onStale: { staleCalled = true },
             onSuccess: { _ in successCalled = true },
             onFailure: { _ in failureCalled = true })
@@ -330,7 +330,7 @@ final class ViewModelSupportTests: XCTestCase {
     func testDeliverTokenAwareResultMatchingTokenRoutesResultCallbacks() {
         var successValue: String? = nil
         var failureValue: Error? = nil
-        deliverTokenAwareResult(result: .success("done"), requestToken: 12, activeToken: 12,
+        deliverTokenAwareResult(.success("done"), requestToken: 12, activeToken: 12,
             onStale: { XCTFail("stale") },
             onSuccess: { value in successValue = value },
             onFailure: { error in failureValue = error })
