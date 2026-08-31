@@ -25,6 +25,8 @@ private struct UserBubble: View {
     let time: String
     let text: String
     let images: [Data]
+    // 点击缩略图后弹出的全屏图片预览索引
+    @State private var previewIndex: Int? = nil
 
     var body: some View {
         HStack(alignment: .bottom) {
@@ -40,6 +42,7 @@ private struct UserBubble: View {
                                     .frame(width: 92, height: 92)
                                     .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.medium))
                                     .cardShadow()
+                                    .onTapGesture { previewIndex = index }
                             }
                         }
                     }
@@ -56,6 +59,53 @@ private struct UserBubble: View {
             }
         }
         .padding(.horizontal, AppTheme.Spacing.m)
+        // 全屏图片预览，支持多张左右翻看
+        .fullScreenCover(item: Binding(
+            get: { previewIndex.map { ImagePreviewAnchor(index: $0) } },
+            set: { previewIndex = $0?.index }
+        )) { _ in
+            ImagePreviewSheet(images: images, startIndex: previewIndex ?? 0) { previewIndex = nil }
+        }
+    }
+}
+
+// fullScreenCover 需要可选 Identifiable 锚点
+private struct ImagePreviewAnchor: Identifiable { let index: Int; var id: Int { index } }
+
+// 全屏图片预览（对齐 Android ImagePreviewDialog）：上一张/下一张翻看
+private struct ImagePreviewSheet: View {
+    let images: [Data]
+    @State var startIndex: Int
+    let onClose: () -> Void
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+            TabView(selection: $startIndex) {
+                ForEach(images.indices, id: \.self) { i in
+                    if let ui = UIImage(data: images[i]) {
+                        Image(uiImage: ui)
+                            .resizable()
+                            .scaledToFit()
+                            .tag(i)
+                    }
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: images.count > 1 ? .automatic : .never))
+            VStack {
+                HStack {
+                    Text("图片预览 \(startIndex + 1)/\(images.count)")
+                        .font(.subheadline.bold()).foregroundStyle(.white)
+                    Spacer()
+                    Button { onClose(); dismiss() } label: {
+                        Image(systemName: "xmark.circle.fill").font(.title).foregroundStyle(.white.opacity(0.85))
+                    }
+                }
+                .padding()
+                Spacer()
+            }
+        }
     }
 }
 
