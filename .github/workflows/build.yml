@@ -49,7 +49,7 @@ jobs:
             CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            build | xcpretty
+            build 2>&1 | tail -120
 
       - name: Test
         working-directory: ios
