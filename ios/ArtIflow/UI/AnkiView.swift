@@ -32,7 +32,14 @@ struct AnkiView: View {
         .background(AppTheme.background.ignoresSafeArea())
         .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { toolbarContent }
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                trailingButton
+            }
+            ToolbarItem(placement: .navigationBarLeading) {
+                leadingButton
+            }
+        }
         .sheet(isPresented: Binding(
             get: { appState.state.showDeckPracticeSummary },
             set: { if !$0 { appState.dismissDeckPracticeSummary() } }
@@ -49,29 +56,32 @@ struct AnkiView: View {
         }
     }
 
+    // 退出当前练习模式（待复习 / 卡组专练）
+    @ViewBuilder
+    private var trailingButton: some View {
+        if appState.state.isDueReviewMode {
+            Button("退出") { appState.closeDueReviewMode() }
+        } else if appState.state.focusedDeckName != nil {
+            Button("退出") { appState.closeDeckFocusedPractice() }
+        }
+    }
+
     private var navigationTitle: String {
         if appState.state.isDueReviewMode { return "今日待复习" }
         if let deck = appState.state.focusedDeckName { return "卡组专练 · \(deck)" }
         return "Anki 测验"
     }
 
-    @ToolbarContentBuilder
-    private var toolbarContent: some ToolbarContent {
-        if appState.state.isDueReviewMode {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button("退出") { appState.closeDueReviewMode() }
+    // 进入今日待复习的入口（仅默认列表显示）
+    @ViewBuilder
+    private var leadingButton: some View {
+        if !appState.state.isDueReviewMode && appState.state.focusedDeckName == nil && !allCards.isEmpty {
+            Button {
+                appState.openDueReviewQueue()
+            } label: {
+                Text("待复习 \(dueCards.count)")
             }
-        } else if appState.state.focusedDeckName != nil {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button("退出") { appState.closeDeckFocusedPractice() }
-            }
-        } else if !allCards.isEmpty {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button { appState.openDueReviewQueue() } label: {
-                    Label("待复习 \(dueCards.count)", systemImage: "clock.arrow.circlepath")
-                }
-                .disabled(dueCards.isEmpty)
-            }
+            .disabled(dueCards.isEmpty)
         }
     }
 
