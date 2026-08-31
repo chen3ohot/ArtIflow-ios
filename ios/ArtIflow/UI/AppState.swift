@@ -22,6 +22,7 @@ final class AppState: ObservableObject {
 
     let store = SessionStore()
     let arkClient = ArkApiClient()
+    let flowStudyClient = FlowStudySyncClient()
 
     private var registry = SessionRegistry()
     private var seeds = SessionSeeds(messageSeed: 0, spanSeed: 0, detailSeed: 0, cardSeed: 0)
@@ -899,6 +900,74 @@ final class AppState: ObservableObject {
         guard !trimmed.isEmpty else { return }
         state.profile.level = trimmed
         persist()
+    }
+
+    // MARK: - FlowStudy 配对与上传（对齐 Android pairFlowStudy / pushSessionsToFlowStudy）
+    @Published var flowStudyPairCode = ""
+    @Published var flowStudyBusy = false
+    @Published var flowStudyMessage: String? = nil
+
+    /// 保证 settings 里有 device_id（缺则生成并持久化）
+    private func ensureFlowStudyDeviceId() -> RuntimeSettings {
+        let existing = state.settings.flowStudyDeviceId.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !existing.isEmpty { return state.settings }
+        let generated = "artiflow_\(UUID().uuidString.lowercased())"
+        var updated = state.settings
+        updated.flowStudyDeviceId = generated
+        state.settings = updated
+        state.settingsDraft = updated
+        persist()
+        return updated
+    }
+
+    func pairFlowStudy() async {
+        let code = flowStudyPairCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty else { flowStudyMessage = "配对码为空"; return }
+        flowStudyBusy = true
+        flowStudyMessage = "FlowStudy 配对中..."
+        defer { flowStudyBusy = false }
+        let settings = ensureFlowStudyDeviceId()
+        let result = await flowStudyClient.pairDevice(serverUrl: settings.flowStudyServerUrl, pairCode: code, deviceId: settings.flowStudyDeviceId)
+        switch result {
+        case .success(let resp):
+            var updated = settings
+            updated.flowStudyDeviceToken = resp.deviceToken
+            state.settings = updated
+            state.settingsDraft = updated
+            flowStudyMessage = "配对成功"
+            persist()
+        case .failure(let err):
+            flowStudyMessage = "配对失败：\(resolveErrorHint(err, fallback: "未知错误"))"
+        }
+    }
+
+    func pushSessionsToFlowStudy() async {
+        flowStudyBusy = true
+        flowStudyMessage = "上传主界面中..."
+        defer { flowStudyBusy = false }
+        let settings = ensureFlowStudyDeviceId()
+        if settings.flowStudyServerUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            flowStudyMessage = "FlowStudy 地址为空"; return
+        }
+        if settings.flowStudyDeviceToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            flowStudyMessage = "请先配对获取设备 token"; return
+        }
+        let active = registry.orderedSessions().first { $0.id == state.activeSessionId } ?? registry.orderedSessions().first
+        guard let active = active else { flowStudyMessage = "没有可上传的主界面内容"; return }
+        var stateCopy = state
+        stateCopy.settings = settings
+        guard let payload = buildPersistedSessionsPayload(state: stateCopy, sessions: [active]), !payload.sessions.isEmpty else {
+            flowStudyMessage = "没有可上传的主界面内容"; return
+        }
+        let payloadJson = store.exportPayloadJson(payload)
+        let result = await flowStudyClient.pushSessions(serverUrl: settings.flowStudyServerUrl, deviceToken: settings.flowStudyDeviceToken, deviceId: settings.flowStudyDeviceId, payloadJson: payloadJson)
+        switch result {
+        case .success(let resp):
+            flowStudyMessage = "上传完成：+\(resp.insertedSessions) 更新\(resp.updatedSessions)"
+            persist()
+        case .failure(let err):
+            flowStudyMessage = "上传失败：\(resolveErrorHint(err, fallback: "未知错误"))"
+        }
     }
 
     // MARK: - Persistence

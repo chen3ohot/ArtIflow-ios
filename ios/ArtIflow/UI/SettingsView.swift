@@ -6,6 +6,7 @@ struct SettingsView: View {
 
     @State private var showAdvanced = false
     @State private var showPresets = false
+    @State private var showFlowStudy = false
 
     var body: some View {
         NavigationStack {
@@ -132,6 +133,47 @@ struct SettingsView: View {
                     }
                 } footer: {
                     Text("可选：把当前端点存为预设，方便切换。")
+                }
+
+                // FlowStudy 后端配对 / 上传
+                Section {
+                    DisclosureGroup("FlowStudy 对接 · 可选", isExpanded: $showFlowStudy) {
+                        TextField("服务器地址", text: $appState.state.settingsDraft.flowStudyServerUrl)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.URL)
+                        if !appState.state.settingsDraft.flowStudyDeviceId.isEmpty {
+                            LabeledContent("设备 ID", value: String(appState.state.settingsDraft.flowStudyDeviceId.prefix(20)) + "…")
+                        }
+                        if !appState.state.settingsDraft.flowStudyDeviceToken.isEmpty {
+                            LabeledContent("Token", value: "已配对")
+                        }
+                        TextField("配对码", text: $appState.flowStudyPairCode)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                        HStack {
+                            Button {
+                                Task { await appState.pairFlowStudy() }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    if appState.flowStudyBusy { ProgressView().scaleEffect(0.7) }
+                                    Text("配对")
+                                }
+                            }
+                            .disabled(appState.flowStudyBusy)
+                            Button {
+                                Task { await appState.pushSessionsToFlowStudy() }
+                            } label: {
+                                Text("上传主界面")
+                            }
+                            .disabled(appState.flowStudyBusy)
+                        }
+                        if let msg = appState.flowStudyMessage {
+                            Text(msg).font(.caption).foregroundStyle(msg.hasPrefix("配对成功") || msg.hasPrefix("上传完成") ? AppTheme.accent : AppTheme.danger)
+                        }
+                    }
+                } footer: {
+                    Text("可选：与 FlowStudy 后端配对并上传当前主界面（会话/卡片）。")
                 }
             }
             .navigationTitle("设置")
