@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    -webkit-text-size-adjust: 100%;
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    color: #2F433C;
+  }
+  #content {
+    padding: 4px 2px;
+    font-size: 16px;
+    line-height: 1.55;
+    word-break: break-word;
+  }
+  #content h1, #content h2, #content h3 { font-weight: 700; line-height: 1.3; }
+  #content h1 { font-size: 1.3em; }
+  #content h2 { font-size: 1.18em; }
+  #content h3 { font-size: 1.06em; }
+  #content p { margin: 0.4em 0; }
+  #content ul, #content ol { margin: 0.3em 0; padding-left: 1.4em; }
+  #content li { margin: 0.15em 0; }
+  #content code {
+    font-family: "SF Mono", ui-monospace, Menlo, monospace;
+    background: rgba(59,93,82,0.10);
+    padding: 0.1em 0.3em;
+    border-radius: 4px;
+    font-size: 0.92em;
+  }
+  #content pre {
+    background: rgba(59,93,82,0.10);
+    padding: 8px 10px;
+    border-radius: 8px;
+    overflow-x: auto;
+  }
+  #content pre code { background: transparent; padding: 0; }
+  #content blockquote {
+    border-left: 3px solid #5A7269;
+    margin: 0.4em 0;
+    padding: 0.1em 0.8em;
+    color: #5A7269;
+  }
+  #content a { color: #2F6D93; text-decoration: underline; }
+  #content table { border-collapse: collapse; margin: 0.4em 0; }
+  #content th, #content td { border: 1px solid rgba(59,93,82,0.3); padding: 4px 8px; }
+  #content .paragraph-block { margin: 0.5em 0; }
+  #content .paragraph-divider {
+    height: 1px;
+    background: rgba(59,93,82,0.12);
+    margin: 0.5em 0;
+    border: none;
+  }
+</style>
+</head>
+<body>
+<div id="content"></div>
+<script>
+  const ARTIFLOW_STYLE = {
+    textColor: "#2F433C",
+    textAlign: "left",
+    fontSize: 16
+  };
+
+  function renderMarkdown(md) {
+    // Lightweight CommonMark-ish renderer sufficient for the app's output:
+    // headings, fenced code, blockquotes, ordered/unordered lists, tables,
+    // inline bold/italic/strike/code/links, and LaTeX ($$ / \( / \[ already
+    // normalized to $$ block / $$ inline before reaching here).
+    const lines = md.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+    let html = "";
+    let i = 0;
+    const out = [];
+
+    function inline(text) {
+      // Escape HTML first.
+      let t = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      // Inline code
+      t = t.replace(/`([^`]+)`/g, (_, c) => "<code>" + c + "</code>");
+      // Bold
+      t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      // Italic (avoid eating bold markers handled above)
+      t = t.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, "$1<em>$2</em>");
+      t = t.replace(/_([^_]+)_/g, "<em>$1</em>");
+      // Strikethrough
+      t = t.replace(/~~([^~]+)~~/g, "<del>$1</del>");
+      // Links
+      t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+      return t;
+    }
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // Fenced code block
+      if (/^```/.test(line.trim())) {
+        let block = "";
+        i++;
+        while (i < lines.length && !/^```/.test(lines[i].trim())) {
+          block += lines[i] + "\n";
+          i++;
+        }
+        if (i < lines.length) i++; // closing fence
+        out.push('<pre><code>' + block.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") + '</code></pre>');
+        continue;
+      }
+
+      // Headings
+      const h = line.match(/^(#{1,3})\s+(.*)$/);
+      if (h) {
+        const level = h[1].length;
+        out.push("<h" + level + ">" + inline(h[2]) + "</h" + level + ">");
+        i++;
+        continue;
+      }
+
+      // Blockquote
+      if (/^>\s?/.test(line)) {
+        let block = "";
+        while (i < lines.length && /^>\s?/.test(lines[i])) {
+          block += lines[i].replace(/^>\s?/, "") + "\n";
+          i++;
+        }
+        out.push("<blockquote>" + inline(block.trim()) + "</blockquote>");
+        continue;
+      }
+
+      // Unordered list
+      if (/^\s*[-*+]\s+/.test(line)) {
+        let items = [];
+        while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) {
+          items.push("<li>" + inline(lines[i].replace(/^\s*[-*+]\s+/, "")) + "</li>");
+          i++;
+        }
+        out.push("<ul>" + items.join("") + "</ul>");
+        continue;
+      }
+
+      // Ordered list
+      if (/^\s*\d+\.\s+/.test(line)) {
+        let items = [];
+        while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+          items.push("<li>" + inline(lines[i].replace(/^\s*\d+\.\s+/, "")) + "</li>");
+          i++;
+        }
+        out.push("<ol>" + items.join("") + "</ol>");
+        continue;
+      }
+
+      // Skip KaTeX-only block delimiters already in content; blank line
+      if (line.trim() === "") { i++; continue; }
+
+      // Paragraph (collect consecutive non-special lines)
+      let para = line;
+      let j = i + 1;
+      while (
+        j < lines.length &&
+        lines[j].trim() !== "" &&
+        !/^```/.test(lines[j].trim()) &&
+        !/^(#{1,3})\s+/.test(lines[j]) &&
+        !/^>\s?/.test(lines[j]) &&
+        !/^\s*[-*+]\s+/.test(lines[j]) &&
+        !/^\s*\d+\.\s+/.test(lines[j])
+      ) {
+        para += "\n" + lines[j];
+        j++;
+      }
+      out.push("<p>" + inline(para) + "</p>");
+      i = j;
+    }
+    return out.join("\n");
+  }
+
+  function render(md, style) {
+    const root = document.getElementById("content");
+    if (style) {
+      if (style.textColor) root.style.color = style.textColor;
+      if (style.textAlign) root.style.textAlign = style.textAlign;
+      if (style.fontSize) root.style.fontSize = style.fontSize + "px";
+    }
+    root.innerHTML = renderMarkdown(md || "");
+    if (window.renderMathInElement) {
+      try {
+        renderMathInElement(root, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "$", right: "$", display: false }
+          ],
+          throwOnError: false
+        });
+      } catch (e) {}
+    }
+    const height = Math.ceil(root.getBoundingClientRect().height + 8);
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.artiflowHeight) {
+      window.webkit.messageHandlers.artiflowHeight.postMessage({ height: height });
+    }
+  }
+
+  window.artiflowRender = render;
+</script>
+</body>
+</html>
