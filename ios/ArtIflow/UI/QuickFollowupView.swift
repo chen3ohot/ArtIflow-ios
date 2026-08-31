@@ -114,12 +114,12 @@ struct QuickFollowupView: View {
     }
 
     private var navigationTitle: String {
-        if let current = focusedDetail { return "追问 · \(current.question.prefix(12))" }
+        if let current = focusedDetail { return "追问 · \((current.question ?? "").prefix(12))" }
         return "精细追问"
     }
 
     // 段落卡片
-    private func spanCard(_ span: ChatSpan) -> some View {
+    private func spanCard(_ span: SpanData) -> some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
             Text("当前聚焦段落").font(.caption).foregroundStyle(.appSecondary)
             Text(span.content).font(.callout)
@@ -136,10 +136,10 @@ struct QuickFollowupView: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
             if !focusPath.isEmpty {
                 // 显示面包屑路径：根 → … → 当前
-                Text(focusPath.map { $0.question.prefix(10) }.joined(separator: " › "))
+                Text(focusPath.map { ($0.question ?? "").prefix(10) }.joined(separator: " › "))
                     .font(.caption2).foregroundStyle(.appSecondary).lineLimit(1)
             }
-            Text("Q：\(detail.question)").font(.subheadline.bold())
+            Text("Q：\(detail.question ?? "")").font(.subheadline.bold())
             Text(detail.answer).font(.callout)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -152,7 +152,7 @@ struct QuickFollowupView: View {
     private func detailRow(_ detail: SpanDetail) -> some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(detail.question).font(.subheadline.bold()).lineLimit(2)
+                Text(detail.question ?? "").font(.subheadline.bold()).lineLimit(2)
                 Text(detail.answer).font(.caption).foregroundStyle(.appSecondary).lineLimit(2)
             }
             Spacer()
