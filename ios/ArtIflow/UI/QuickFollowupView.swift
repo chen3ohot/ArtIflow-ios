@@ -176,7 +176,7 @@ struct QuickFollowupView: View {
                 .overlay(RoundedRectangle(cornerRadius: AppTheme.Radius.pill).stroke(Color.secondary.opacity(0.15)))
 
             Button {
-                if speech.isRecording { speech.stopTranscription() } else { speech.requestAuthorization { _ in speech.startTranscription() } }
+                appState.toggleVoiceRecording(speech)
             } label: {
                 Label(speech.isRecording ? "停止录音" : "语音追问", systemImage: speech.isRecording ? "waveform" : "mic.fill")
                     .frame(maxWidth: .infinity)

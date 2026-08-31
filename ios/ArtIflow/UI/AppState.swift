@@ -1029,14 +1029,38 @@ final class AppState: ObservableObject {
 
     // MARK: - Photo handling
 
+    /// 统一的轻提示：同时写入持久 toastMessage 与瞬时 toast，供 RootView 顶部气泡展示
+    func showToast(_ text: String) {
+        toast = text
+        state.toastMessage = text
+    }
+
+    /// 切换语音录音：授权失败/启动失败都给出 toast 提示
+    func toggleVoiceRecording(_ speech: SpeechRecognizer) {
+        if speech.isRecording { speech.stopTranscription(); return }
+        speech.requestAuthorization { [weak self] granted in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                guard granted else { self.showToast("语音/麦克风权限未开启，请在系统设置中授权"); return }
+                speech.startTranscription()
+                if let msg = speech.failureMessage { self.showToast(msg) }
+                else { self.showToast("正在录音，说话后点按停止即可提交") }
+            }
+        }
+    }
+
     func loadPickedImages() async {
         var images: [Data] = []
+        var failed = 0
         for item in photoPickerItems {
             if let data = try? await item.loadTransferable(type: Data.self) {
                 images.append(data)
+            } else {
+                failed += 1
             }
         }
         pendingImages = images
+        if failed > 0 { showToast("\(failed) 张图片读取失败") }
     }
 }
 

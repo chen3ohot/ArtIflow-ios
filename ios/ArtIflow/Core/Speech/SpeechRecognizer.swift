@@ -7,6 +7,8 @@ import AVFoundation
 final class SpeechRecognizer: ObservableObject {
     @Published var isRecording = false
     @Published var transcript = ""
+    // 录音启动失败时写入提示文案，供上层 toast 显示
+    @Published var failureMessage: String? = nil
 
     private var recognizer: SFSpeechRecognizer?
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -17,17 +19,25 @@ final class SpeechRecognizer: ObservableObject {
         self.recognizer = SFSpeechRecognizer(locale: locale)
     }
 
+    /// 同时申请语音识别与麦克风权限，二者都授权才回 true
     func requestAuthorization(completion: @escaping (Bool) -> Void) {
         SFSpeechRecognizer.requestAuthorization { speechStatus in
-            DispatchQueue.main.async {
-                completion(speechStatus == .authorized)
+            guard speechStatus == .authorized else {
+                DispatchQueue.main.async { completion(false) }
+                return
+            }
+            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                DispatchQueue.main.async { completion(granted) }
             }
         }
     }
 
     func startTranscription() {
-        guard let recognizer = recognizer, recognizer.isAvailable else { return }
+        guard let recognizer = recognizer, recognizer.isAvailable else {
+            failureMessage = "语音识别不可用"; return
+        }
         transcript = ""
+        failureMessage = nil
         do {
             let audioSession = AVAudioSession.sharedInstance()
             try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
@@ -59,6 +69,7 @@ final class SpeechRecognizer: ObservableObject {
             isRecording = true
         } catch {
             stopTranscription()
+            failureMessage = "录音启动失败，请检查麦克风权限"
         }
     }
 

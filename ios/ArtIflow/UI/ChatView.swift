@@ -124,7 +124,7 @@ struct ChatInputBar: View {
                 .photosPicker(isPresented: $showingPicker, selection: $appState.photoPickerItems, maxSelectionCount: 4, matching: .images)
 
                 Button {
-                    if speech.isRecording { speech.stopTranscription() } else { speech.requestAuthorization { _ in speech.startTranscription() } }
+                    appState.toggleVoiceRecording(speech)
                 } label: {
                     Image(systemName: speech.isRecording ? "waveform.circle.fill" : "mic.fill")
                         .font(.title3)
