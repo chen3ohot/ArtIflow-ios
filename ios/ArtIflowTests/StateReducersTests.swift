@@ -4,7 +4,8 @@ import XCTest
 final class StateReducersTests: XCTestCase {
     private func makeState(input: String = "", messages: [ChatMessage] = [], settings: RuntimeSettings? = nil) -> ChatUiState {
         let s = settings ?? RuntimeSettings.defaults()
-        return ChatUiState(input: input, messages: messages, settings: s, settingsDraft: s)
+        // 成员式初始化需按声明顺序传参：messages 在 input 之前
+        return ChatUiState(messages: messages, input: input, settings: s, settingsDraft: s)
     }
 
     func testQueueImageQuestionStateAppendsMessageAndUpdatesProfile() {

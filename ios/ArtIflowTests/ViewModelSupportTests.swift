@@ -1,6 +1,13 @@
 import XCTest
 @testable import ArtIflow
 
+// 测试用错误类型：localizedDescription 直接返回传入消息，便于 resolveErrorHint 解析
+struct RuntimeError: LocalizedError {
+    let message: String
+    init(_ message: String) { self.message = message }
+    var errorDescription: String? { message }
+}
+
 final class ViewModelSupportTests: XCTestCase {
     private func assistant(spans: [SpanData], mainSpan: SpanData? = nil, id: String = "msg-2") -> ChatMessage {
         return .assistant(id: id, time: "10:01", spans: spans, mainSpan: mainSpan)
@@ -243,10 +250,10 @@ final class ViewModelSupportTests: XCTestCase {
         var s = RuntimeSettings.defaults()
         s.arkApiKey = "test-key"
         let blankState = ChatUiState(activeSessionId: "  ", settings: s, settingsDraft: s)
-        XCTAssertNil(buildPersistedSessionsPayload(blankState, sessions: []))
+        XCTAssertNil(buildPersistedSessionsPayload(state: blankState, sessions: []))
         let activeState = ChatUiState(activeSessionId: "session-2", settings: s, settingsDraft: s)
         let stored = toStoredSessionSnapshot(state: activeState, title: "会话", createdAt: 1, updatedAt: 2)
-        let payload = buildPersistedSessionsPayload(activeState, sessions: [stored])
+        let payload = buildPersistedSessionsPayload(state: activeState, sessions: [stored])
         XCTAssertEqual(payload?.activeSessionId, "session-2")
         XCTAssertEqual(payload?.settings.arkApiKey, "test-key")
         XCTAssertEqual(payload?.sessions.count, 1)
@@ -254,7 +261,8 @@ final class ViewModelSupportTests: XCTestCase {
 
     func testStoredSessionSnapshotAndBuildUiStateKeepQuickFollowupSpanId() {
         var s = RuntimeSettings.defaults()
-        let state = ChatUiState(activeSessionId: "session-quick", activePage: .quickFollowup, quickFollowupSpanId: "span-9", quickFollowupDetailId: "detail-4", settings: s, settingsDraft: s)
+        // ChatUiState 成员式初始化需按属性声明顺序传参：quickFollowupSpanId/DetailId → activePage → activeSessionId
+        let state = ChatUiState(quickFollowupSpanId: "span-9", quickFollowupDetailId: "detail-4", activePage: .quickFollowup, activeSessionId: "session-quick", settings: s, settingsDraft: s)
         _ = s
         let snapshot = toStoredSessionSnapshot(state: state, title: "精细追问", createdAt: 11, updatedAt: 12)
         let rebuilt = buildUiStateFromSession(session: snapshot, ankiCards: [], settings: RuntimeSettings.defaults(), toastMessage: nil)
