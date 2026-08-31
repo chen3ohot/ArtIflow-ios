@@ -349,6 +349,19 @@ func buildDeckPracticeSummary(deckName: String, cards: [AnkiCard], selections: [
 
 // MARK: - Helpers
 
+/// 由卡组专练的选择记录汇总出本轮练习统计（对齐 Android buildDeckPracticeSummary）
+func buildDeckPracticeSummary(deckName: String, cards: [AnkiCard], selections: [String: CardMasteryLevel]) -> DeckPracticeSummary {
+    let reviewed = Array(selections.values)
+    return DeckPracticeSummary(
+        deckName: deckName,
+        totalCards: cards.count,
+        reviewedCards: reviewed.count,
+        needsWorkCount: reviewed.filter { $0 == .needsWork }.count,
+        familiarCount: reviewed.filter { $0 == .familiar }.count,
+        proficientCount: reviewed.filter { $0 == .proficient }.count
+    )
+}
+
 extension Array where Element: Equatable {
     func deduplicated() -> [Element] {
         var result: [Element] = []

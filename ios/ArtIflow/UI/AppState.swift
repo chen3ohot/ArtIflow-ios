@@ -458,8 +458,177 @@ final class AppState: ObservableObject {
     func reviewAnkiCard(_ card: AnkiCard, mastery: CardMasteryLevel) {
         guard let index = state.ankiCards.firstIndex(where: { $0.id == card.id }) else { return }
         let reviewed = applySrsReview(card, mastery: mastery)
-        state.ankiCards[index] = reviewed
+        var updatedCards = state.ankiCards
+        updatedCards[index] = reviewed
+        // 卡组专练模式下记录选择，并在练完时弹出汇总
+        let normalizedDeck = state.focusedDeckName
+        var selections = state.deckPracticeSelections
+        var showSummary = state.showDeckPracticeSummary
+        if let deck = normalizedDeck, (normalizeDeckName(card.deckName) ?? DEFAULT_ANKI_DECK_NAME) == deck {
+            selections[card.id] = mastery
+            let deckTotal = updatedCards.filter { (normalizeDeckName($0.deckName) ?? DEFAULT_ANKI_DECK_NAME) == deck }.count
+            showSummary = deckTotal > 0 && selections.count >= deckTotal
+        }
+        state.ankiCards = sortAnkiCardsForReview(updatedCards)
+        state.deckPracticeSelections = selections
+        state.showDeckPracticeSummary = showSummary
+        state.toastMessage = "已标记\(mastery.label)，下次复习 \(formatSessionTime(reviewed.nextReviewAt))"
+        toast = state.toastMessage
         globalAnkiCards = mergeGlobalAnkiCards(registry.orderedSessions() + [toStoredSessionSnapshot(state: state, title: buildSessionTitle(state.messages, fallbackTime: nowTimeString()), createdAt: currentTimeMillis(), updatedAt: currentTimeMillis())])
+        persist()
+    }
+
+    // MARK: - Anki 卡组练习模式
+
+    // 卡组重命名 / 卡片编辑的弹窗状态
+    @Published var editingAnkiCardId: String? = nil
+    @Published var showRenameDeckDialog: Bool = false
+    @Published var renameDeckPrompt: String = ""
+    @Published var renameDeckNewName: String = ""
+
+    func beginEditAnkiCard(_ card: AnkiCard) { editingAnkiCardId = card.id }
+    func cancelEditAnkiCard() { editingAnkiCardId = nil }
+
+    func openDueReviewQueue() {
+        let dueCount = countDueReviewCards(state.ankiCards)
+        guard dueCount > 0 else { toast = "今日暂无待复习"; state.toastMessage = toast; return }
+        state.activePage = .anki
+        state.isDueReviewMode = true
+        state.focusedDeckName = nil
+        state.toastMessage = "进入今日待复习（\(dueCount) 张）"
+        toast = state.toastMessage
+        persist()
+    }
+
+    func openDeckFocusedPractice(deckName: String) {
+        guard let normalized = normalizeDeckName(deckName), !normalized.isEmpty else {
+            toast = "卡组名称无效"; state.toastMessage = toast; return
+        }
+        let target = state.ankiCards.filter { (normalizeDeckName($0.deckName) ?? DEFAULT_ANKI_DECK_NAME) == normalized }
+        guard !target.isEmpty else { toast = "该卡组暂无可练习卡片"; state.toastMessage = toast; return }
+        state.activePage = .anki
+        state.isDueReviewMode = false
+        state.focusedDeckName = normalized
+        state.deckPracticeSelections = [:]
+        state.showDeckPracticeSummary = false
+        state.toastMessage = "进入卡组专练：\(normalized)"
+        toast = state.toastMessage
+        persist()
+    }
+
+    func closeDueReviewMode() {
+        guard state.isDueReviewMode else { return }
+        state.isDueReviewMode = false
+        state.focusedDeckName = nil
+    }
+
+    func closeDeckFocusedPractice() {
+        guard state.focusedDeckName != nil else { return }
+        state.focusedDeckName = nil
+        state.deckPracticeSelections = [:]
+        state.showDeckPracticeSummary = false
+    }
+
+    func openDeckPracticeSummary() {
+        guard state.focusedDeckName != nil else { return }
+        state.showDeckPracticeSummary = true
+    }
+
+    func dismissDeckPracticeSummary() {
+        guard state.showDeckPracticeSummary else { return }
+        state.showDeckPracticeSummary = false
+    }
+
+    func restartDeckPracticeRound() {
+        guard state.focusedDeckName != nil else { return }
+        state.deckPracticeSelections = [:]
+        state.showDeckPracticeSummary = false
+        state.toastMessage = "已开始新一轮卡组专练"
+        toast = state.toastMessage
+    }
+
+    /// 当前卡组专练的汇总（用于弹窗展示）
+    var currentDeckPracticeSummary: DeckPracticeSummary? {
+        guard let deck = state.focusedDeckName else { return nil }
+        let cards = state.ankiCards.filter { (normalizeDeckName($0.deckName) ?? DEFAULT_ANKI_DECK_NAME) == deck }
+        return buildDeckPracticeSummary(deckName: deck, cards: cards, selections: state.deckPracticeSelections)
+    }
+
+    // MARK: - Anki 卡片管理
+
+    func updateAnkiCard(cardId: String, front: String, back: String, tags: [String]) {
+        let normalizedFront = normalizeCardText(front, maxLen: 500)
+        let normalizedBack = normalizeCardText(back, maxLen: 1200)
+        let normalizedTags = filterToHighSchoolKnowledgeTags(tags, maxSize: 10)
+        guard !normalizedFront.isEmpty, !normalizedBack.isEmpty else {
+            toast = "题面和答案都不能为空"; state.toastMessage = toast; return
+        }
+        guard let index = state.ankiCards.firstIndex(where: { $0.id == cardId }) else {
+            toast = "卡片不存在"; state.toastMessage = toast; return
+        }
+        var updatedCards = state.ankiCards
+        let card = updatedCards[index]
+        // front/back 为 let，整体重建卡片
+        updatedCards[index] = AnkiCard(
+            id: card.id,
+            front: normalizedFront,
+            back: normalizedBack,
+            tags: normalizedTags,
+            source: card.source,
+            createdAt: card.createdAt,
+            nextReviewAt: card.nextReviewAt,
+            reviewCount: card.reviewCount,
+            lastReviewedAt: card.lastReviewedAt,
+            mastery: card.mastery,
+            deckName: card.deckName
+        )
+        state.ankiCards = sortAnkiCardsForReview(updatedCards)
+        state.toastMessage = "Anki 卡片已更新"
+        toast = state.toastMessage
+        persist()
+    }
+
+    func renameAnkiDeck(deckName: String, newDeckName: String) {
+        let from = deckName.trimmingCharacters(in: .whitespacesAndNewlines)
+        var to = newDeckName.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        to = String(to.prefix(12))
+        guard !from.isEmpty, !to.isEmpty else { toast = "卡组名不能为空"; state.toastMessage = toast; return }
+        guard from != DEFAULT_ANKI_DECK_NAME else { toast = "系统卡组不可重命名"; state.toastMessage = toast; return }
+        guard from != to else { toast = "卡组名未变化"; state.toastMessage = toast; return }
+        let updated = state.ankiCards.map { card -> AnkiCard in
+            var c = card
+            if c.deckName == from { c.deckName = to }
+            return c
+        }
+        guard updated != state.ankiCards else { toast = "卡组不存在"; state.toastMessage = toast; return }
+        state.ankiCards = sortAnkiCardsForReview(updated)
+        state.toastMessage = "已重命名卡组"
+        toast = state.toastMessage
+        persist()
+    }
+
+    func archiveAnkiDeck(deckName: String) {
+        let deck = deckName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !deck.isEmpty, deck != DEFAULT_ANKI_DECK_NAME else { return }
+        let updated = state.ankiCards.map { card -> AnkiCard in
+            var c = card
+            if c.deckName == deck { c.deckName = DEFAULT_ANKI_DECK_NAME }
+            return c
+        }
+        guard updated != state.ankiCards else { toast = "卡组不存在"; state.toastMessage = toast; return }
+        state.ankiCards = sortAnkiCardsForReview(updated)
+        state.toastMessage = "已归档到未分类"
+        toast = state.toastMessage
+        persist()
+    }
+
+    func deleteAnkiCard(cardId: String) {
+        let before = state.ankiCards.count
+        state.ankiCards = state.ankiCards.filter { $0.id != cardId }
+        guard state.ankiCards.count != before else { toast = "卡片不存在"; state.toastMessage = toast; return }
+        state.toastMessage = "已删除 Anki 卡片"
+        toast = state.toastMessage
         persist()
     }
 

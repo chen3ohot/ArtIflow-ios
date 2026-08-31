@@ -27,6 +27,11 @@ func formatTimestamp(_ millis: Int64, format: String) -> String {
     return formatter.string(from: date)
 }
 
+/// 卡片下次复习时间格式化（用于复习 toast）
+func formatSessionTime(_ millis: Int64) -> String {
+    return formatTimestamp(millis, format: "MM-dd HH:mm")
+}
+
 func normalizeInlineText(_ text: String) -> String {
     return text
         .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
