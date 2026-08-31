@@ -115,7 +115,7 @@ private struct MarkdownWebView: UIViewRepresentable {
         context.coordinator.parent = self
         // 仅当模板加载完成后才注入最新内容，避免在页面尚未就绪时调用未定义的渲染函数
         if context.coordinator.isLoaded {
-            webView.evaluateJavaScript(context.coordinator.buildInjection(), completionHandler: nil)
+            webView.evaluateJavaScript(context.coordinator.injectionScript(), completionHandler: nil)
         }
     }
 
@@ -138,7 +138,7 @@ private extension MarkdownWebView {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             // 模板与内联脚本就绪后再标记已加载，并立即渲染一次最新内容
             isLoaded = true
-            webView.evaluateJavaScript(buildInjection(), completionHandler: nil)
+            webView.evaluateJavaScript(injectionScript(), completionHandler: nil)
         }
 
         // 接收模板回传的内容高度，更新 SwiftUI 的 frame，并标记已测到高度（取消降级）
@@ -151,10 +151,8 @@ private extension MarkdownWebView {
             }
         }
 
-        /// 构造调用 window.artiflowRender(md, style) 的 JS 注入串。
-        /// 用 JSON.stringify 风格的转义保证任意文本（含引号、反斜杠、$、换行）安全传入；
-        /// 外层加 `if (window.artiflowRender)` 守卫，未就绪时静默跳过。
-        private func buildInjection() -> String {
+        /// 构造调用 window.artiflowRender(md, style) 的 JS 注入串（供 updateUIView 复用）。
+        func injectionScript() -> String {
             let escaped = parent.markdown
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")
@@ -172,7 +170,7 @@ private extension MarkdownWebView {
             // 首次加载模板并把首帧渲染注入追加到 HTML 末尾，加载完成自动执行
             if let templateUrl = Bundle.main.url(forResource: "MarkdownTemplate", withExtension: "html"),
                let template = try? String(contentsOf: templateUrl, encoding: .utf8) {
-                let html = template + "<script>" + buildInjection() + "</script>"
+                let html = template + "<script>" + injectionScript() + "</script>"
                 webView.loadHTMLString(html, baseURL: URL(string: "https://cdn.jsdelivr.net/"))
             } else {
                 // 模板缺失：直接内联一段纯文本兜底
