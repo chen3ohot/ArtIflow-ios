@@ -386,7 +386,7 @@ final class AppState: ObservableObject {
         isTestingConnection = true
         connectionTestResult = nil
         defer { isTestingConnection = false }
-        let result = await arkClient.generateReply(messages: [ArkRequestMessage(role: .user, text: "ping")], config: config)
+        let result = await arkClient.generateReply(messages: [ArkRequestMessage(role: "user", text: "ping")], config: config)
         switch result {
         case .success:
             connectionTestResult = "✅ 连接成功"
