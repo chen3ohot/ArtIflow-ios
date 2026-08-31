@@ -137,6 +137,17 @@ struct SettingsView: View {
             .navigationTitle("设置")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Menu {
+                        Button(role: .destructive) {
+                            appState.resetSettingsDraft()
+                        } label: {
+                            Label("恢复默认设置", systemImage: "arrow.counterclockwise")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { appState.cancelSettings() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") { appState.saveSettings(); dismiss() }.bold()

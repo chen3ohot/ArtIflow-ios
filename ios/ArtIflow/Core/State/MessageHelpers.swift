@@ -417,6 +417,77 @@ func buildFallbackSavedQuestionTitle(sourceQuestion: String, answer: String) -> 
     return String(candidateLine.prefix(120)).isEmpty ? "图片题目归档" : String(candidateLine.prefix(120))
 }
 
+/// 构造某条助手回答对应的收藏快照（对齐 Android buildSavedQuestionSnapshot）
+func buildSavedQuestionSnapshot(state: ChatUiState, messageId: String) -> SavedQuestion? {
+    guard let assistantIndex = state.messages.firstIndex(where: {
+        if case .assistant(let id, _, _, _, _) = $0 { return id == messageId }; return false
+    }) else { return nil }
+    guard case .assistant(let assistantId, let time, let spans, let mainSpan, _) = state.messages[assistantIndex] else { return nil }
+
+    // 该回答上方最近一条用户消息作为来源
+    let sourceUser = state.messages.prefix(assistantIndex).reversed().first(where: {
+        if case .user = $0 { return true }; return false
+    })
+
+    let sourceQuestion: String = {
+        if let user = sourceUser, case .user(_, _, let text, _, _) = user {
+            let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty { return t }
+        }
+        let main = mainSpan?.sourceQuestion.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !main.isEmpty { return main }
+        return spans.first?.sourceQuestion.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }()
+    if sourceQuestion.isEmpty { return nil }
+
+    let answer = fullAssistantAnswer(spans: spans, mainSpan: mainSpan)
+    if answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return nil }
+
+    let imagePreviewList: [Data] = {
+        guard let user = sourceUser, case .user(_, _, _, let bytes, let list) = user else { return [] }
+        return list.isEmpty ? (bytes.map { [$0] } ?? []) : list
+    }()
+    let resolvedQuestion = imagePreviewList.isEmpty ? sourceQuestion : buildFallbackSavedQuestionTitle(sourceQuestion: sourceQuestion, answer: answer)
+    let historyCount = interactiveSpansOf(spans: spans, mainSpan: mainSpan).reduce(0) { acc, span in acc + (state.histories[span.id] ?? []).count }
+
+    let combined = [resolvedQuestion, answer].joined(separator: "\n")
+    let tagged = QuestionTagger.autoTag(combined)
+    let tags = filterToHighSchoolKnowledgeTags(inferKnowledgePoints(combined), maxSize: 6)
+    let subject = tagged.subject == "其他" || tagged.subject == "通用" ? "" : tagged.subject
+    let questionType = tagged.questionType == "其他" ? "" : tagged.questionType
+
+    return SavedQuestion(
+        id: "saved-\(currentTimeMillis())-\(assistantId)",
+        sourceMessageId: assistantId,
+        question: resolvedQuestion,
+        answer: answer,
+        sourceTime: time,
+        savedAt: currentTimeMillis(),
+        followupCount: historyCount,
+        knowledgeTags: tags,
+        subject: subject,
+        questionType: questionType,
+        analysisSummary: "",
+        imagePreviewBytes: imagePreviewList.first,
+        imagePreviewList: imagePreviewList
+    )
+}
+
+/// 取助手回答的完整文本（mainSpan 优先，否则合并 spans）
+private func fullAssistantAnswer(spans: [SpanData], mainSpan: SpanData?) -> String {
+    if let m = mainSpan, !m.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return m.content }
+    return spans.map { $0.content.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+        .joined(separator: "\n\n")
+}
+
+private func interactiveSpansOf(spans: [SpanData], mainSpan: SpanData?) -> [SpanData] {
+    var result: [SpanData] = []
+    if let mainSpan = mainSpan { result.append(mainSpan) }
+    result.append(contentsOf: spans.filter { $0.id != mainSpan?.id })
+    return result
+}
+
 func buildFallbackImageArchivePayload(sourceQuestion: String, answer: String) -> ImageQuestionArchivePayload {
     let question = buildFallbackSavedQuestionTitle(sourceQuestion: sourceQuestion, answer: answer)
     let combinedText = [question, answer].joined(separator: "\n")

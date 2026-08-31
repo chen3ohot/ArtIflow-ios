@@ -318,6 +318,98 @@ final class AppState: ObservableObject {
         persist()
     }
 
+    // MARK: - 已收藏题目（归档）操作
+
+    /// 切换某条助手回答的收藏状态（已收藏则取消，未收藏则新建快照）
+    func toggleSavedQuestion(messageId: String) {
+        if let existing = state.savedQuestions.first(where: { $0.sourceMessageId == messageId }) {
+            removeSavedQuestion(savedQuestionId: existing.id)
+            return
+        }
+        guard let saved = buildSavedQuestionSnapshot(state: state, messageId: messageId) else {
+            toast = "当前题目暂时无法收藏"; state.toastMessage = toast
+            return
+        }
+        state.savedQuestions = [saved] + state.savedQuestions.filter { $0.sourceMessageId != messageId }
+        state.archiveFocusSavedQuestionId = saved.id
+        rebuildSavedQuestionRegistry()
+        state.toastMessage = "已收藏到题目归档"
+        toast = state.toastMessage
+        persist()
+    }
+
+    func removeSavedQuestion(savedQuestionId: String) {
+        guard state.savedQuestions.contains(where: { $0.id == savedQuestionId }) else { return }
+        state.savedQuestions = state.savedQuestions.filter { $0.id != savedQuestionId }
+        if state.archiveFocusSavedQuestionId == savedQuestionId { state.archiveFocusSavedQuestionId = nil }
+        state.toastMessage = "已移出题目归档"
+        toast = state.toastMessage
+        persist()
+    }
+
+    /// 把已收藏题目回填到提问框并切到聊天页
+    func restoreSavedQuestionToComposer(savedQuestionId: String) {
+        guard let saved = state.savedQuestions.first(where: { $0.id == savedQuestionId }) else {
+            toast = "未找到已收藏题目"; state.toastMessage = toast; return
+        }
+        state.activePage = .chat
+        state.input = saved.question
+        state.archiveFocusSavedQuestionId = nil
+        state.toastMessage = "已回填到提问框"
+        toast = state.toastMessage
+        persist()
+    }
+
+    /// 重新生成某条助手回答（用其上方最近的用户消息作为来源）
+    func refreshAssistantReply(messageId: String) async {
+        guard let assistantIndex = state.messages.firstIndex(where: {
+            if case .assistant(let id, _, _, _, _) = $0 { return id == messageId }; return false
+        }) else {
+            toast = "未找到要刷新的回复"; state.toastMessage = toast; return
+        }
+        guard case .assistant(let aid, _, let spans, let mainSpan, _) = state.messages[assistantIndex] else { return }
+        let rawSource = mainSpan?.sourceQuestion ?? spans.first?.sourceQuestion ?? ""
+        let sourceQuestion = rawSource.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 找到该回答上方最近一条用户消息
+        let sourceUser = state.messages.prefix(assistantIndex).reversed().first(where: {
+            if case .user = $0 { return true }; return false
+        })
+        let imageBytesList: [Data] = {
+            guard let user = sourceUser, case .user(_, _, _, let bytes, let list) = user else { return [] }
+            return list.isEmpty ? (bytes.map { [$0] } ?? []) : list
+        }()
+        // 先移除旧助手回答
+        state.messages.remove(at: assistantIndex)
+        if !imageBytesList.isEmpty {
+            let images = toImagePayloads(imageBytesList)
+            let userMessage = ChatMessage.user(id: nextMessageId(), time: nowTimeString(), text: sourceQuestion.isEmpty ? "重新识别这道题" : sourceQuestion, imagePreviewList: imageBytesList)
+            state = queueImageQuestionState(current: state, userMessage: userMessage, question: sourceQuestion, source: sourceQuestion)
+            persist()
+            requestToken += 1
+            let token = requestToken
+            state.isLoading = true
+            let config = state.settings.toArkRuntimeConfig()
+            let imagePrompt = normalizeImagePrompt(state.settings.imagePrompt)
+            let result = await arkClient.generateReplyWithImages(prompt: imagePrompt, images: images, config: config, stream: true, onDelta: { [weak self] delta in
+                Task { @MainActor in self?.appendStreamDelta(delta) }
+            })
+            state.isLoading = false
+            deliverTokenAwareResult(result, requestToken: token, activeToken: requestToken,
+                onStale: { },
+                onSuccess: { [weak self] _ in Task { @MainActor in self?.finalizeAssistant() } },
+                onFailure: { [weak self] error in Task { @MainActor in self?.handleFailure(error) } }
+            )
+        } else {
+            let question = sourceQuestion.isEmpty ? (latestUserQuestion()) : sourceQuestion
+            let userMessage = ChatMessage.user(id: nextMessageId(), time: nowTimeString(), text: question)
+            state = queueQuestionState(current: state, userMessage: userMessage, question: question, isFollowup: false, isVoice: false, clearInput: false)
+            persist()
+            await runArkRequest(messages: toArkMessages(state.messages))
+        }
+        // 抑制 aid 未使用警告
+        _ = aid
+    }
+
     func sendCoachMessage(_ text: String) async {
         let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return }
@@ -376,6 +468,9 @@ final class AppState: ObservableObject {
     func openSettings() { state.isSettingsOpen = true }
     func cancelSettings() { state.settingsDraft = state.settings; state.isSettingsOpen = false }
     func saveSettings() { state.settings = state.settingsDraft; state.isSettingsOpen = false; persist() }
+
+    // 恢复设置草稿为内置默认（保留 ARK/OpenSpeech 默认值，清空自定义端点）
+    func resetSettingsDraft() { state.settingsDraft = RuntimeSettings.defaults() }
 
     /// 用当前草稿配置发起一次轻量连通性测试（非流式，发一个 ping）
     @Published var connectionTestResult: String? = nil

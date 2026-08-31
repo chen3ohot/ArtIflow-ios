@@ -27,9 +27,29 @@ struct ArchiveView: View {
                                 }
                             }
                             MarkdownView(markdown: saved.answer, textColor: AppTheme.primaryText, fontSize: 15)
+                            HStack(spacing: AppTheme.Spacing.m) {
+                                Button {
+                                    appState.restoreSavedQuestionToComposer(savedQuestionId: saved.id)
+                                } label: {
+                                    Label("回填提问", systemImage: "arrow.uturn.backward")
+                                        .font(.caption)
+                                }
+                                if saved.followupCount > 0 {
+                                    Label("追问 \(saved.followupCount)", systemImage: "ellipsis.bubble")
+                                        .font(.caption2).foregroundStyle(.appSecondary)
+                                }
+                                Spacer()
+                            }
                         }
                         .padding(.vertical, AppTheme.Spacing.xs)
                         .listRowBackground(Color.clear)
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                appState.removeSavedQuestion(savedQuestionId: saved.id)
+                            } label: {
+                                Label("移出", systemImage: "trash")
+                            }
+                        }
                     }
                 }
                 .listStyle(.plain)

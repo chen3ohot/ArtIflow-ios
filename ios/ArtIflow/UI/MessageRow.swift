@@ -71,7 +71,7 @@ private struct AssistantBubble: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: AppTheme.Spacing.s) {
                 ForEach(interactiveSpans, id: \.id) { span in
-                    SpanCard(span: span)
+                    SpanCard(span: span, messageId: id)
                     if !(appState.state.histories[span.id] ?? []).isEmpty {
                         FollowupHistorySection(spanId: span.id)
                     }
@@ -104,7 +104,12 @@ private struct AssistantBubble: View {
 // 段落卡：内容为空时显示打字指示器，否则渲染 Markdown
 private struct SpanCard: View {
     let span: SpanData
+    let messageId: String   // 所属助手消息 id，用于按消息收藏/重新生成
     @EnvironmentObject var appState: AppState
+
+    private var isSaved: Bool {
+        appState.state.savedQuestions.contains { $0.sourceMessageId == messageId }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.s) {
@@ -126,8 +131,9 @@ private struct SpanCard: View {
         .cardShadow()
         .contextMenu {
             Button("自动讲解") { Task { await appState.autoExplain(spanId: span.id) } }
-            Button("精细追问") { appState.state.quickFollowupSpanId = span.id }
-            Button("收藏本题") { appState.saveCurrentQuestion() }
+            Button("精细追问") { appState.state.quickFollowupSpanId = messageId }
+            Button(isSaved ? "取消收藏" : "收藏本题") { appState.toggleSavedQuestion(messageId: messageId) }
+            Button("重新生成") { Task { await appState.refreshAssistantReply(messageId: messageId) } }
         }
         .highPriorityGesture(
             DragGesture(minimumDistance: 40)
