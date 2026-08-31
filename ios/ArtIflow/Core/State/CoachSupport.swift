@@ -419,7 +419,8 @@ private func buildCoachRecommendedQuestions(focusAreas: [CoachFocusArea], savedQ
 }
 
 private func buildCoachRecommendationBasis(area: CoachFocusArea, anchor: SavedQuestion?, actionHint: String) -> String {
-    let anchorSnippet = anchor?.question.flatMap { normalizeCoachSnippet($0, maxLen: 18) } ?? ""
+    // 先取出 question 的可选值，再用 Optional.flatMap，避免可选链被解析成 String.flatMap
+    let anchorSnippet = (anchor?.question).flatMap { normalizeCoachSnippet($0, maxLen: 18) } ?? ""
     var output = "这道题主要围绕“\(area.point)”，因为你今天最集中暴露的问题是：\(normalizeCoachSentence(area.diagnosis))。"
     if !actionHint.isEmpty {
         output += "训练重点放在：\(actionHint)。"
