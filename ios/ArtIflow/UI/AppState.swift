@@ -522,7 +522,10 @@ final class AppState: ObservableObject {
         let normalizedPrompt = question.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedPrompt.isEmpty else { toast = "这道推荐题暂时不可用"; state.toastMessage = toast; return }
         let digest = ensureCoachDigestCurrent()
-        let fallbackTitle = digest.focusAreas.first?.point.map { "\($0) · 典型题" } ?? "教练推荐题"
+        let fallbackTitle: String = {
+            if let p = digest.focusAreas.first?.point { return "\(p) · 典型题" }
+            return "教练推荐题"
+        }()
         let round = CoachRecommendedQuestion(
             id: question.id,
             title: question.title.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank { fallbackTitle },
