@@ -4,7 +4,10 @@ struct RootView: View {
     @EnvironmentObject var appState: AppState
 
     var body: some View {
-        TabView(selection: $appState.state.activePage) {
+        TabView(selection: Binding(
+            get: { appState.state.activePage },
+            set: { appState.switchWorkspacePage($0) }
+        )) {
             NavigationStack { ChatView() }
                 .tag(WorkspacePage.chat)
                 .tabItem { Label("学习", systemImage: "bubble.left.and.bubble.right.fill") }

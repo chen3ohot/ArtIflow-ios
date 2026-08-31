@@ -107,6 +107,24 @@ final class AppState: ObservableObject {
 
     var orderedSessions: [StoredSession] { return registry.orderedSessions() }
 
+    // MARK: - 切换主页面（对齐 Android switchWorkspacePage）
+
+    /// 切换底部页面：离开 Anki 时退出待复习/卡组专练，离开归档时清除聚焦，进入教练时刷新每日复盘
+    func switchWorkspacePage(_ page: WorkspacePage) {
+        let prev = state.activePage
+        if prev != page {
+            if prev == .anki {
+                state.isDueReviewMode = false
+                state.focusedDeckName = nil
+                state.showDeckPracticeSummary = false
+            }
+            if prev == .archive { state.archiveFocusSavedQuestionId = nil }
+            state.activePage = page
+        }
+        if page == .coach { onCoachPageViewed() }
+        persist()
+    }
+
     // MARK: - Sending questions
 
     func sendTextQuestion() async {

@@ -141,6 +141,11 @@ private struct CoachDigestCard: View {
 // 教练消息气泡
 private struct CoachBubble: View {
     let message: CoachChatMessage
+    @EnvironmentObject var appState: AppState
+
+    private var quickActions: [CoachReplyQuickAction] {
+        buildCoachReplyQuickActions(message: message, digest: appState.state.coachDigest, training: appState.state.dailyTraining)
+    }
 
     var body: some View {
         HStack {
@@ -153,10 +158,77 @@ private struct CoachBubble: View {
                     .background(message.role == .user ? AppTheme.userBubble : AppTheme.cardBackground)
                     .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.medium))
                     .cardShadow(opacity: message.role == .user ? 0 : 0.06)
+                if message.role == .assistant && !quickActions.isEmpty {
+                    // 助手回复下方的快捷追问胶囊，对齐 Android coach quick actions
+                    FlowChips(items: quickActions.map { $0.label }) { index in
+                        appState.sendCoachQuickAction(quickActions[index].prompt)
+                    }
+                }
                 Text(message.time).font(.caption2).foregroundStyle(.appSecondary)
             }
             if message.role == .assistant { Spacer(minLength: 40) }
         }
+    }
+}
+
+// 简单的流式胶囊布局：自动换行排列快捷追问按钮
+private struct FlowChips: View {
+    let items: [String]
+    let onTap: (Int) -> Void
+
+    var body: some View {
+        FlexibleHStack(items: items) { index, label in
+            Button { onTap(index) } label: {
+                Text(label).font(.caption.bold())
+                    .padding(.horizontal, AppTheme.Spacing.s).padding(.vertical, AppTheme.Spacing.xs + 1)
+                    .background(AppTheme.accentSoft.opacity(0.6))
+                    .foregroundStyle(AppTheme.accent)
+                    .clipShape(Capsule())
+            }
+        }
+    }
+}
+
+// 手写简易换行布局（iOS16 无原生 FlowLayout）
+private struct FlexibleHStack<Content: View>: View {
+    let items: [String]
+    let content: (Int, String) -> Content
+
+    var body: some View {
+        GeometryReader { geo in
+            self.generateContent(in: geo.size)
+        }
+        .frame(height: computeHeight())
+    }
+
+    private func generateContent(in size: CGSize) -> some View {
+        var width = CGFloat.zero
+        var rows: [[Int]] = [[]]
+        for (i, item) in items.enumerated() {
+            let w = CGFloat(item.count) * 14 + 28
+            if width + w > size.width && !rows[rows.count - 1].isEmpty {
+                rows.append([i]); width = w
+            } else {
+                rows[rows.count - 1].append(i); width += w + AppTheme.Spacing.s
+            }
+        }
+        return VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
+            ForEach(rows.indices, id: \.self) { row in
+                HStack(spacing: AppTheme.Spacing.s) {
+                    ForEach(rows[row], id: \.self) { i in
+                        content(i, items[i])
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    private func computeHeight() -> CGFloat {
+        let rowHeight: CGFloat = 30
+        let perRow = max(1, Int(UIScreen.main.bounds.width / 120))
+        let rows = (items.count + perRow - 1) / perRow
+        return CGFloat(rows) * (rowHeight + AppTheme.Spacing.xs)
     }
 }
 
