@@ -184,7 +184,9 @@ func buildFollowupTreeExportMarkdown(_ scopes: [FollowupTreeScope], exportedAtMi
         output += "- 追问节点：\n"
         for (depth, detail) in buildFollowupTreeExportEntries(scope.details) {
             let indent = String(repeating: "  ", count: depth)
-            let summary = detail.summary?.trimmingCharacters(in: .whitespacesAndNewlines).filter { !$0.isEmpty } ?? buildDetailCardSummary(question: detail.question, answer: detail.answer)
+            // 优先使用已有摘要；为空时回退到由问答自动生成的摘要
+            let summary = (detail.summary?.trimmingCharacters(in: .whitespacesAndNewlines))
+                .flatMap { $0.isEmpty ? nil : $0 } ?? buildDetailCardSummary(question: detail.question, answer: detail.answer)
             output += "  \(indent)- \(detail.mode) · \(detail.time)\n"
             output += "  \(indent)  - 问题：\(normalizeInlineText(detail.question ?? "").isEmpty ? "（无问题文本）" : normalizeInlineText(detail.question ?? ""))\n"
             output += "  \(indent)  - 摘要：\(normalizeInlineText(summary).isEmpty ? "讲解摘要" : normalizeInlineText(summary))\n"
@@ -199,7 +201,8 @@ func buildFollowupTreeExportMarkdown(_ scopes: [FollowupTreeScope], exportedAtMi
 
 private func buildFollowupTreeExportEntries(_ details: [SpanDetail]) -> [(Int, SpanDetail)] {
     if details.isEmpty { return [] }
-    let chronological = details.reversed()
+    // 倒序后固化为 [SpanDetail]，避免 ReversedCollection 与 [SpanDetail] 混用导致类型不匹配
+    let chronological = Array(details.reversed())
     let allIds = Set(chronological.map { $0.id })
     var childrenByParent: [String?: [SpanDetail]] = [:]
     var parentOrder: [String?] = []

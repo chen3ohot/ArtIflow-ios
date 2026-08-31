@@ -618,7 +618,8 @@ func buildRootJson(_ payload: PersistedSessions) -> [String: Any] {
 }
 
 func knowledgePointsToJson(_ knowledgePoints: [String: Int]) -> [String: Any] {
-    return Dictionary(knowledgePoints)
+    // 将 [String: Int] 提升为 [String: Any]，便于并入 JSON 树
+    return knowledgePoints.mapValues { $0 as Any }
 }
 
 private extension String {

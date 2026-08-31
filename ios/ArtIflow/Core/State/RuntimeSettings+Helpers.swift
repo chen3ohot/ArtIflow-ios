@@ -53,7 +53,8 @@ extension RuntimeSettings {
         let trimmedName = String(normalizedName.prefix(18))
         if trimmedName.isEmpty { return self }
 
-        let preserved = customModelPresets.filter { !$0.name.caseInsensitiveCompare(trimmedName) == .orderedSame }
+        // 过滤掉同名的旧预设（大小写不敏感），避免重复保存
+        let preserved = customModelPresets.filter { $0.name.caseInsensitiveCompare(trimmedName) != .orderedSame }
         let id = "preset-\(currentTimeMillis())-\(trimmedName.lowercased().hashValue)"
         let nextPreset = ModelPreset(
             id: id,
