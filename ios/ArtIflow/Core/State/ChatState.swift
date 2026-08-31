@@ -41,7 +41,8 @@ func queueImageQuestionState(current: ChatUiState, userMessage: ChatMessage, que
     var next = current
     next.messages.append(userMessage)
     next.profile = current.profile.updateWith(text: question, isFollowup: false, isVoice: false)
-    next.knowledgePoints = mergeKnowledgePoints(current.knowledgePoints, texts: [source])
+    // 图片提问用 question 提取知识点（source 多为通用“拍照搜题”提示词，无法命中知识点）
+    next.knowledgePoints = mergeKnowledgePoints(current.knowledgePoints, texts: [question])
     return next
 }
 
