@@ -64,4 +64,17 @@ final class ArkApiClientTests: XCTestCase {
             XCTFail("expected success: \(error)")
         }
     }
+
+    // 从提供商 /models 拉取模型 id 列表
+    func testListModelsParsesDataIds() async {
+        let body = #"{"data":[{"id":"gpt-4o"},{"id":"gpt-4o-mini"},{"id":"text-embedding-3-small"}]}"#
+        let client = ArkApiClient(transport: StaticHTTPTransport(code: 200, body: body))
+        let result = await client.listModels(config: runtimeConfig(endpoint: "chat/completions"))
+        switch result {
+        case .success(let models):
+            XCTAssertEqual(models, ["gpt-4o", "gpt-4o-mini", "text-embedding-3-small"])
+        case .failure(let error):
+            XCTFail("expected success: \(error)")
+        }
+    }
 }

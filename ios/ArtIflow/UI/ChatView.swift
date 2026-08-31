@@ -85,6 +85,8 @@ struct ChatInputBar: View {
     @EnvironmentObject var speech: SpeechRecognizer
     @State private var showingPicker = false
     @State private var isSending = false
+    // 控制输入框焦点：发送后置 false 收起键盘
+    @FocusState private var inputFocused: Bool
 
     private var canSend: Bool {
         !appState.state.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !appState.pendingImages.isEmpty
@@ -131,6 +133,7 @@ struct ChatInputBar: View {
                 }
 
                 TextField("问一道题，或拍照搜题", text: $appState.state.input, axis: .vertical)
+                    .focused($inputFocused)
                     .lineLimit(1...5)
                     .padding(.horizontal, AppTheme.Spacing.m)
                     .padding(.vertical, AppTheme.Spacing.s + 2)
@@ -141,10 +144,13 @@ struct ChatInputBar: View {
                 Button {
                     guard canSend, !isSending else { return }
                     isSending = true
+                    inputFocused = false   // 立即收起键盘
                     Task {
                         defer { isSending = false }
                         if !appState.pendingImages.isEmpty {
-                            await appState.sendImageQuestion(prompt: appState.state.input)
+                            let prompt = appState.state.input
+                            appState.state.input = ""   // 清空提示词
+                            await appState.sendImageQuestion(prompt: prompt)
                             appState.pendingImages = []
                             appState.photoPickerItems = []
                         } else {

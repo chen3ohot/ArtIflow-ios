@@ -6,6 +6,11 @@ protocol HTTPTransport {
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse)
 }
 
+/// 支持逐字节流式读取的传输层；URLSessionTransport 实现它以提供真正的 SSE 增量输出。
+protocol HTTPByteStreamTransport {
+    func bytes(for request: URLRequest) async throws -> (URLSession.AsyncBytes, HTTPURLResponse)
+}
+
 enum HTTPTransportError: Error {
     case noResponse
     case unsuccessful(Int, String)
@@ -25,9 +30,12 @@ enum ArkEndpointKind {
 
 final class ArkApiClient {
     private let transport: HTTPTransport
+    // 若传输层支持字节流则用于真正的 SSE 增量流式输出；否则回退到整段解析
+    private let streamingTransport: HTTPByteStreamTransport?
 
     init(transport: HTTPTransport = URLSessionTransport.shared) {
         self.transport = transport
+        self.streamingTransport = transport as? HTTPByteStreamTransport
     }
 
     func isConfigured(_ config: ArkRuntimeConfig = ArkApiClient.defaultConfig()) -> Bool {
@@ -84,10 +92,17 @@ final class ArkApiClient {
         guard isConfigured(config) else {
             return .failure(IllegalStateError("请先在设置中配置 ARK_API_KEY"))
         }
+        let endpoint = ArkEndpointKind.resolve(config.endpoint)
+        let body = buildRequestBody(endpoint: endpoint, messages: messages, config: config, stream: true)
+        let request = makeRequest(endpoint: endpoint, config: config, body: body)
+
+        // 真正的增量流式：传输层支持字节流时逐行消费 SSE，token 边到边显示
+        if let streamer = streamingTransport {
+            return await consumeByteStream(streamer: streamer, request: request, endpoint: endpoint, onDelta: onDelta, onReasoningDelta: onReasoningDelta)
+        }
+
+        // 回退：一次性读取整段响应再按 SSE 解析（测试用的静态传输走这里）
         do {
-            let endpoint = ArkEndpointKind.resolve(config.endpoint)
-            let body = buildRequestBody(endpoint: endpoint, messages: messages, config: config, stream: true)
-            let request = makeRequest(endpoint: endpoint, config: config, body: body)
             let (data, response) = try await transport.send(request)
             guard response.statusCode >= 200 && response.statusCode < 300 else {
                 let message = extractErrorMessage(String(data: data, encoding: .utf8) ?? "")
@@ -99,6 +114,102 @@ final class ArkApiClient {
                 return .failure(IllegalStateError("ARK 返回为空，请稍后重试"))
             }
             return .success(text)
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    /// 逐行消费 SSE 字节流，边读边回调 delta；并兼容端点忽略 stream:true 的非 SSE 整段 JSON。
+    private func consumeByteStream(
+        streamer: HTTPByteStreamTransport,
+        request: URLRequest,
+        endpoint: String,
+        onDelta: @escaping (String) -> Void,
+        onReasoningDelta: ((String) -> Void)?
+    ) async -> Result<String, Error> {
+        do {
+            let (bytes, response) = try await streamer.bytes(for: request)
+            guard response.statusCode >= 200 && response.statusCode < 300 else {
+                // 读取剩余字节用于错误信息
+                var errData = Data()
+                for try await byte in bytes { errData.append(byte) }
+                let message = extractErrorMessage(String(data: errData, encoding: .utf8) ?? "")
+                return .failure(IllegalStateError("ARK 请求失败 (\(response.statusCode)): \(message)"))
+            }
+            var aggregate = ""
+            var fallbackText = ""
+            var reasoningAggregate = ""
+            var reasoningFallback = ""
+            var sawDataLine = false
+            var rawBody = ""
+            for try await lineRaw in bytes.lines {
+                let line = lineRaw.trimmingCharacters(in: CharacterSet(charactersIn: "\r\n "))
+                var payload = ""
+                if line.hasPrefix("data:") {
+                    sawDataLine = true
+                    payload = String(line.dropFirst("data:".count)).trimmingCharacters(in: .whitespaces)
+                } else if line.hasPrefix("event:") || line.hasPrefix(":") || line.isEmpty {
+                    payload = ""
+                } else {
+                    payload = line
+                    if !line.isEmpty { rawBody += line + "\n" }
+                }
+                if payload.isEmpty || payload == "[DONE]" { continue }
+                let parsed = parseStreamPayload(endpoint: endpoint, payload: payload)
+                if !parsed.delta.isEmpty {
+                    aggregate += parsed.delta
+                    onDelta(parsed.delta)
+                }
+                if !parsed.reasoningDelta.isEmpty {
+                    reasoningAggregate += parsed.reasoningDelta
+                    onReasoningDelta?(parsed.reasoningDelta)
+                }
+                if !parsed.fallbackText.isEmpty { fallbackText = parsed.fallbackText }
+                if !parsed.reasoningFallback.isEmpty { reasoningFallback = parsed.reasoningFallback }
+            }
+            if reasoningAggregate.isEmpty && !reasoningFallback.isEmpty {
+                onReasoningDelta?(reasoningFallback)
+            }
+            if !aggregate.isEmpty { return .success(aggregate) }
+            if !fallbackText.isEmpty { return .success(fallbackText) }
+            // 非 SSE 兜底：把整段当普通 JSON 解析
+            if !sawDataLine && !rawBody.isEmpty {
+                let whole = parseAssistantText(endpoint: endpoint, body: rawBody)
+                if !whole.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    onDelta(whole)
+                    return .success(whole)
+                }
+            }
+            return .failure(IllegalStateError("ARK 返回为空，请稍后重试"))
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    /// 拉取 OpenAI 兼容端点的可用模型列表（GET {baseUrl}/models）。
+    func listModels(config: ArkRuntimeConfig) async -> Result<[String], Error> {
+        guard isConfigured(config) else {
+            return .failure(IllegalStateError("请先配置 API Key"))
+        }
+        let base = config.baseUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let url = URL(string: "\(base)/models") else {
+            return .failure(ArgumentError("Base URL 无效"))
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 30
+        do {
+            let (data, response) = try await transport.send(request)
+            guard response.statusCode >= 200 && response.statusCode < 300 else {
+                let message = extractErrorMessage(String(data: data, encoding: .utf8) ?? "")
+                return .failure(IllegalStateError("拉取模型失败 (\(response.statusCode)): \(message)"))
+            }
+            let bodyString = String(data: data, encoding: .utf8) ?? ""
+            guard let root = JSON.parse(bodyString) else { return .success([]) }
+            let items = optArray(root, key: "data") ?? []
+            let ids = items.compactMap { optString($0, key: "id") }.filter { !$0.isEmpty }
+            return .success(ids)
         } catch {
             return .failure(error)
         }
@@ -127,6 +238,18 @@ final class ArkApiClient {
             let endpoint = ArkEndpointKind.resolve(config.endpoint)
             let body = buildImageRequestBody(endpoint: endpoint, prompt: normalizedPrompt, images: normalizedImages, config: config, stream: stream)
             let request = makeRequest(endpoint: endpoint, config: config, body: body)
+
+            // 图片搜题也走真正的增量流式（传输层支持时）
+            if stream, let streamer = streamingTransport {
+                return await consumeByteStream(
+                    streamer: streamer,
+                    request: request,
+                    endpoint: endpoint,
+                    onDelta: onDelta ?? { _ in },
+                    onReasoningDelta: onReasoningDelta
+                )
+            }
+
             let (data, response) = try await transport.send(request)
             guard response.statusCode >= 200 && response.statusCode < 300 else {
                 let message = extractErrorMessage(String(data: data, encoding: .utf8) ?? "")
@@ -444,7 +567,7 @@ struct IllegalStateError: Error, LocalizedError { let message: String; init(_ me
 
 // MARK: - URLSession transport
 
-final class URLSessionTransport: HTTPTransport {
+final class URLSessionTransport: HTTPTransport, HTTPByteStreamTransport {
     static let shared = URLSessionTransport()
     private let session: URLSession
 
@@ -456,5 +579,12 @@ final class URLSessionTransport: HTTPTransport {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw HTTPTransportError.noResponse }
         return (data, http)
+    }
+
+    // 字节流接口：用于 SSE 增量流式
+    func bytes(for request: URLRequest) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
+        let (bytes, response) = try await session.bytes(for: request)
+        guard let http = response as? HTTPURLResponse else { throw HTTPTransportError.noResponse }
+        return (bytes, http)
     }
 }

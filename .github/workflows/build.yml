@@ -45,6 +45,8 @@ jobs:
           xcodebuild -project ArtIflow.xcodeproj -scheme ArtIflow \
             -destination 'generic/platform=iOS Simulator' \
             -configuration Debug \
+            MARKETING_VERSION="0.0.0-dev" \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             build | xcpretty
@@ -56,6 +58,8 @@ jobs:
           xcodebuild -project ArtIflow.xcodeproj -scheme ArtIflow \
             -destination 'platform=iOS Simulator,name=iPhone 15' \
             -configuration Debug \
+            MARKETING_VERSION="0.0.0-dev" \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             test | xcpretty

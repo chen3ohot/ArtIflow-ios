@@ -19,9 +19,49 @@ struct SettingsView: View {
                     SecureField("API Key", text: $appState.state.settingsDraft.customModelApiKey)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
-                    TextField("模型名", text: $appState.state.settingsDraft.customModelName)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                    HStack {
+                        TextField("模型名", text: $appState.state.settingsDraft.customModelName)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                        // 一键从提供商 /models 拉取
+                        Button {
+                            Task { await appState.fetchModels() }
+                        } label: {
+                            HStack(spacing: 4) {
+                                if appState.isFetchingModels {
+                                    ProgressView().scaleEffect(0.7)
+                                } else {
+                                    Image(systemName: "arrow.down.circle")
+                                }
+                                Text("拉取")
+                            }
+                        }
+                        .disabled(appState.isFetchingModels)
+                    }
+                    if let err = appState.fetchModelsError {
+                        Text(err).font(.caption).foregroundStyle(AppTheme.danger)
+                    }
+                    if !appState.fetchedModels.isEmpty {
+                        // 拉取到的模型列表：点击直接填入模型名
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: AppTheme.Spacing.xs) {
+                                ForEach(appState.fetchedModels, id: \.self) { id in
+                                    Button {
+                                        appState.state.settingsDraft.customModelName = id
+                                    } label: {
+                                        Text(id)
+                                            .font(.caption)
+                                            .padding(.horizontal, AppTheme.Spacing.s)
+                                            .padding(.vertical, 5)
+                                            .background(AppTheme.accentSoft)
+                                            .foregroundStyle(AppTheme.accentStrong)
+                                            .clipShape(Capsule())
+                                    }
+                                    .disabled(appState.state.settingsDraft.customModelName == id)
+                                }
+                            }
+                        }
+                    }
                     HStack(spacing: AppTheme.Spacing.s) {
                         Button {
                             Task { await appState.testConnection() }
@@ -45,7 +85,7 @@ struct SettingsView: View {
                 } header: {
                     Text("OpenAI 兼容接口 · 必填")
                 } footer: {
-                    Text("填入任意兼容 OpenAI 协议的端点即可，统一走 chat/completions。示例：\n• OpenAI：https://api.openai.com/v1 + gpt-4o-mini\n• 自建/中转：https://your-host/v1 + 你的模型\nBase URL 可带或不带 /chat/completions 结尾。")
+                    Text("填入任意兼容 OpenAI 协议的端点即可，统一走 chat/completions。示例：\n• OpenAI：https://api.openai.com/v1 + gpt-4o-mini\n• 自建/中转：https://your-host/v1 + 你的模型\nBase URL 可带或不带 /chat/completions 结尾。点“拉取”可从提供商 /models 一键获取可用模型。")
                 }
 
                 // 可选：系统提示词 / 图片提示词

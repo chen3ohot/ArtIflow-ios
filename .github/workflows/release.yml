@@ -40,12 +40,18 @@ jobs:
         working-directory: ios
         run: |
           set -euo pipefail
+          # 版本号由 tag 注入：v1.2.3 -> MARKETING_VERSION=1.2.3，构建号取 run number
+          MARKETING_VERSION="${GITHUB_REF_NAME#v}"
+          CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
+          echo "Building $MARKETING_VERSION ($CURRENT_PROJECT_VERSION)"
           xcodebuild \
             -project ArtIflow.xcodeproj \
             -scheme ArtIflow \
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
+            MARKETING_VERSION="$MARKETING_VERSION" \
+            CURRENT_PROJECT_VERSION="$CURRENT_PROJECT_VERSION" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \

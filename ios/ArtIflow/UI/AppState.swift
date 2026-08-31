@@ -400,6 +400,39 @@ final class AppState: ObservableObject {
         }
     }
 
+    // 一键从提供商拉取模型列表
+    @Published var fetchedModels: [String] = []
+    @Published var isFetchingModels = false
+    @Published var fetchModelsError: String? = nil
+
+    func fetchModels() async {
+        guard state.settingsDraft.hasCompleteCustomModel() else {
+            fetchModelsError = "请先填齐 Base URL 和 API Key"
+            return
+        }
+        let config = state.settingsDraft.customModelConfigOrNull() ?? state.settingsDraft.toArkRuntimeConfig()
+        isFetchingModels = true
+        fetchModelsError = nil
+        fetchedModels = []
+        defer { isFetchingModels = false }
+        let result = await arkClient.listModels(config: config)
+        switch result {
+        case .success(let models):
+            fetchedModels = models
+            if models.isEmpty { fetchModelsError = "未返回任何模型" }
+        case .failure(let error):
+            fetchModelsError = resolveErrorHint(error, fallback: "拉取失败")
+        }
+    }
+
+    // 自定义学习阶段（学习画像）
+    func updateProfileLevel(_ level: String) {
+        let trimmed = level.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        state.profile.level = trimmed
+        persist()
+    }
+
     // MARK: - Persistence
 
     func persist() {
