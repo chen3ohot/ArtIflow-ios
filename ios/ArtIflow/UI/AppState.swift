@@ -382,7 +382,12 @@ final class AppState: ObservableObject {
     @Published var isTestingConnection = false
 
     func testConnection() async {
-        let config = state.settingsDraft.toArkRuntimeConfig()
+        // 仅支持 OpenAI 兼容自定义端点：三项必须齐备，否则直接给出明确提示
+        guard state.settingsDraft.hasCompleteCustomModel() else {
+            connectionTestResult = "❌ 请先填齐 Base URL、API Key、模型名"
+            return
+        }
+        let config = state.settingsDraft.customModelConfigOrNull() ?? state.settingsDraft.toArkRuntimeConfig()
         isTestingConnection = true
         connectionTestResult = nil
         defer { isTestingConnection = false }

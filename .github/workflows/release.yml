@@ -16,6 +16,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # 完整历史，用于生成 tag 之间的更新日志
+          fetch-depth: 0
 
       - name: Select Xcode
         run: |
@@ -68,11 +71,34 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
+
+          # 生成本次 tag 相对上一个 tag 的更新日志（基于提交信息）
+          NOTES_FILE="$(mktemp)"
+          {
+            echo "## 更新日志"
+            echo ""
+            PREV=""
+            if git describe --tags --abbrev=0 "${TAG}^" >/dev/null 2>&1; then
+              PREV="$(git describe --tags --abbrev=0 "${TAG}^")"
+            fi
+            if [ -n "$PREV" ]; then
+              git log --no-merges --pretty=format:"- %s" "${PREV}..${TAG}"
+            else
+              # 没有 previous tag：列出本 tag 涉及的全部提交（最多 60 条）
+              git log --no-merges --pretty=format:"- %s" "${TAG}" | head -60
+            fi
+            echo ""
+            echo ""
+            echo "## 产物"
+            echo "- ArtIflow.ipa：未签名 arm64 iOS 16 构建产物，用于自签名 / 企业内部分发 / 逆向分析"
+            echo "- 由 GitHub Action 在 macos-14 上通过 XcodeGen + xcodebuild 构建"
+            echo "- 安装到真机前需用你自己的签名证书 / 描述文件重签（如 iOS App Signer、fastlane 等）"
+          } > "$NOTES_FILE"
+
+          echo "===== 生成日志预览 ====="
+          cat "$NOTES_FILE"
+
           gh release create "$TAG" ios/ArtIflow.ipa \
             --title "$TAG" \
-            --notes "ArtIflow iOS（SwiftUI）未签名构建产物。
-
-          - 产物：ArtIflow.ipa（未签名，用于自签名 / 企业内部分发 / 逆向分析）
-          - 由 GitHub Action 在 macos-14 上通过 XcodeGen + xcodebuild 构建
-          - 安装到真机前需用你自己的签名证书/描述文件重签（如 iOS App Signer、fastlane 等）" \
+            --notes-file "$NOTES_FILE" \
             --verify-tag

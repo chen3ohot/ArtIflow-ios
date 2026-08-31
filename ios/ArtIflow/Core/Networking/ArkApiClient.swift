@@ -293,6 +293,17 @@ final class ArkApiClient {
     }
 
     private func parseAssistantTextStream(endpoint: String, body: String, onDelta: (String) -> Void, onReasoningDelta: ((String) -> Void)?) -> String {
+        // 兜底：部分兼容端点会忽略 stream:true，直接返回普通 JSON（非 SSE）。
+        // 此时按整段解析并作为一次 delta 输出，避免“返回为空”把内容吞掉。
+        let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedBody.contains("data:") {
+            let whole = parseAssistantText(endpoint: endpoint, body: body)
+            if !whole.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                onDelta(whole)
+                return whole
+            }
+        }
+
         var aggregate = ""
         var fallbackText = ""
         var reasoningAggregate = ""

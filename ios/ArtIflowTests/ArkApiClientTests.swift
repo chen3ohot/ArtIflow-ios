@@ -44,4 +44,24 @@ final class ArkApiClientTests: XCTestCase {
         case .failure: break
         }
     }
+
+    // 兼容端点忽略 stream:true、直接返回普通 chat/completions JSON 时，
+    // 流式解析应把整体 message.content 作为一次 delta 返回，而不是判为空。
+    func testGenerateReplyStreamFallsBackToPlainJsonWhenNotSse() async {
+        let body = #"{"choices":[{"index":0,"message":{"role":"assistant","content":"这是一段普通回答"}}]}"#
+        var observed = ""
+        let client = ArkApiClient(transport: StaticHTTPTransport(code: 200, body: body))
+        let result = await client.generateReplyStream(
+            messages: [ArkRequestMessage(role: "user", text: "讲解这题")],
+            config: runtimeConfig(endpoint: "chat/completions"),
+            onDelta: { delta in observed.append(delta) }
+        )
+        switch result {
+        case .success(let text):
+            XCTAssertEqual(text, "这是一段普通回答")
+            XCTAssertEqual(observed, "这是一段普通回答")
+        case .failure(let error):
+            XCTFail("expected success: \(error)")
+        }
+    }
 }
