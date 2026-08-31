@@ -134,3 +134,17 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(config.endpoint, "chat/completions")
     }
 }
+
+    // buildDetailPath：根 → 中间 → 叶 的分层链路回溯
+    func testBuildDetailPathWalksParentChainRootToLeaf() {
+        let root = SpanDetail(id: "d1", mode: "精细追问", time: "10:00", question: "根追问", answer: "a1", parentDetailId: nil, summary: nil)
+        let mid = SpanDetail(id: "d2", mode: "精细追问", time: "10:01", question: "中间", answer: "a2", parentDetailId: "d1", summary: nil)
+        let leaf = SpanDetail(id: "d3", mode: "精细追问", time: "10:02", question: "叶子", answer: "a3", parentDetailId: "d2", summary: nil)
+        let details = [root, mid, leaf]
+
+        XCTAssertEqual(buildDetailPath(details: details, detailId: "d3").map { $0.id }, ["d1", "d2", "d3"])
+        XCTAssertEqual(buildDetailPath(details: details, detailId: "d2").map { $0.id }, ["d1", "d2"])
+        XCTAssertEqual(buildDetailPath(details: details, detailId: "d1").map { $0.id }, ["d1"])
+        // 缺失或孤立 detail 不应死循环
+        XCTAssertEqual(buildDetailPath(details: details, detailId: "missing"), [])
+    }
