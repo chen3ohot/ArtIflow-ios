@@ -42,7 +42,8 @@ struct ProfileView: View {
                 LabeledContent("卡片数", value: "\(appState.state.ankiCards.count)")
             }
         }
-        .background(Color.appBackground.ignoresSafeArea())
+        .scrollContentBackground(.hidden)
+        .background(AppTheme.background.ignoresSafeArea())
         .navigationTitle("我的")
         .navigationBarTitleDisplayMode(.inline)
     }

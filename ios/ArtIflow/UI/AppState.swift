@@ -2,12 +2,21 @@ import SwiftUI
 import Combine
 import PhotosUI
 
-/// Central view model driving the iOS port. Holds the active `ChatUiState`, persists
-/// sessions via `SessionStore`, and orchestrates ARK requests + span follow-ups.
+/// 错误条的可操作类型
+enum ErrorBannerAction {
+    case openSettings
+    case none
+}
+
+/// 中央 view model，驱动 iOS 移植版。持有活跃的 ChatUiState、通过 SessionStore
+/// 持久化会话，并编排 ARK 请求与段落追问。
 @MainActor
 final class AppState: ObservableObject {
     @Published var state: ChatUiState
     @Published var toast: String? = nil
+    // 持久错误条：发问失败时显示在底部，带可操作按钮，避免用户“发了没反应”
+    @Published var errorBanner: String? = nil
+    @Published var errorAction: ErrorBannerAction? = nil
     @Published var photoPickerItems: [PhotosPickerItem] = []
     @Published var pendingImages: [Data] = []
 
@@ -224,6 +233,8 @@ final class AppState: ObservableObject {
         let span = SpanData(id: spanId, content: text, sourceQuestion: latestUserQuestion())
         let assistant = ChatMessage.assistant(id: assistantId, time: nowTimeString(), spans: [span], mainSpan: span)
         state = appendAssistantMessageState(current: state, assistantMessage: assistant, toastMessage: "已生成回答")
+        errorBanner = nil
+        errorAction = nil
         streamText = ""
         streamAssistantId = nil
         streamSpanId = nil
@@ -232,6 +243,8 @@ final class AppState: ObservableObject {
 
     private func finishSpanDetail(spanId: String, detail: SpanDetail) {
         state = upsertSpanDetailHistory(current: state, spanId: spanId, detail: detail, clearProcessing: true, toastMessage: "已完成")
+        errorBanner = nil
+        errorAction = nil
         persist()
     }
 
@@ -242,14 +255,20 @@ final class AppState: ObservableObject {
     }
 
     private func handleFailure(_ error: Error) {
-        state.toastMessage = "回答失败：\(resolveErrorHint(error, fallback: "网络不可用"))"
+        let hint = resolveErrorHint(error, fallback: "网络不可用")
+        state.toastMessage = "回答失败：\(hint)"
         toast = state.toastMessage
-        if let lastUser = state.messages.last(where: { if case .user = $0 { return true }; return false }) {
-            state = rollbackQueuedUserMessageState(current: state, messageId: lastUser.id, restoredInput: lastUserIdQuestion())
-        }
+        // 不再回滚用户消息：保留在列表里，让用户看到自己问了什么；改用持久错误条提示
+        errorAction = hint.contains("设置") ? .openSettings : .none
+        errorBanner = "回答失败：\(hint)"
         streamText = ""
         streamAssistantId = nil
         persist()
+    }
+
+    func dismissErrorBanner() {
+        errorBanner = nil
+        errorAction = nil
     }
 
     private func latestUserQuestion() -> String {
@@ -339,6 +358,8 @@ final class AppState: ObservableObject {
         let assistant = CoachChatMessage(id: id, role: .assistant, time: nowTimeString(), text: coachBuffer)
         state.coachMessages = upsertCoachMessage(state.coachMessages, target: assistant)
         coachBuffer = ""
+        errorBanner = nil
+        errorAction = nil
         persist()
     }
 
@@ -355,6 +376,24 @@ final class AppState: ObservableObject {
     func openSettings() { state.isSettingsOpen = true }
     func cancelSettings() { state.settingsDraft = state.settings; state.isSettingsOpen = false }
     func saveSettings() { state.settings = state.settingsDraft; state.isSettingsOpen = false; persist() }
+
+    /// 用当前草稿配置发起一次轻量连通性测试（非流式，发一个 ping）
+    @Published var connectionTestResult: String? = nil
+    @Published var isTestingConnection = false
+
+    func testConnection() async {
+        let config = state.settingsDraft.toArkRuntimeConfig()
+        isTestingConnection = true
+        connectionTestResult = nil
+        defer { isTestingConnection = false }
+        let result = await arkClient.generateReply(messages: [ArkRequestMessage(role: .user, text: "ping")], config: config)
+        switch result {
+        case .success:
+            connectionTestResult = "✅ 连接成功"
+        case .failure(let error):
+            connectionTestResult = "❌ " + resolveErrorHint(error, fallback: "连接失败")
+        }
+    }
 
     // MARK: - Persistence
 

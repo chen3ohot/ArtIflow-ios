@@ -8,23 +8,25 @@ struct QuickFollowupView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
+            VStack(spacing: AppTheme.Spacing.l) {
                 if let span = findSpanById(appState.state.messages, spanId: spanId) {
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: AppTheme.Spacing.s) {
                         Text("当前聚焦段落").font(.caption).foregroundStyle(.appSecondary)
                         Text(span.content).font(.callout)
-                            .padding(12)
+                            .padding(AppTheme.Spacing.m)
                             .background(AppTheme.cardBackground)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.medium))
+                            .cardShadow(opacity: 0.06)
                     }
                 }
 
                 TextField("输入追问，或按住麦克风说话", text: $appState.state.input, axis: .vertical)
                     .lineLimit(2...6)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.7))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal, AppTheme.Spacing.m)
+                    .padding(.vertical, AppTheme.Spacing.s + 2)
+                    .background(AppTheme.cardBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.pill))
+                    .overlay(RoundedRectangle(cornerRadius: AppTheme.Radius.pill).stroke(Color.secondary.opacity(0.15)))
 
                 Button {
                     if speech.isRecording { speech.stopTranscription() } else { speech.requestAuthorization { _ in speech.startTranscription() } }
@@ -33,11 +35,12 @@ struct QuickFollowupView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
-                .tint(speech.isRecording ? .red : AppTheme.assistantAccent)
+                .tint(speech.isRecording ? AppTheme.danger : AppTheme.accent)
 
                 Spacer()
             }
             .padding()
+            .tint(AppTheme.accent)
             .navigationTitle("精细追问")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -52,6 +55,7 @@ struct QuickFollowupView: View {
                             dismiss()
                         }
                     }
+                    .bold()
                 }
             }
             .onChange(of: speech.transcript) { value in

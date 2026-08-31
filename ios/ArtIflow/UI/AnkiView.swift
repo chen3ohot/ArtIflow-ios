@@ -9,12 +9,11 @@ struct AnkiView: View {
     var body: some View {
         Group {
             if appState.state.ankiCards.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "rectangle.stack").font(.system(size: 44)).foregroundStyle(.appSecondary)
-                    Text("还没有卡片").font(.headline)
-                    Text("收藏题目后可生成记忆卡片").font(.subheadline).foregroundStyle(.appSecondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                EmptyStateView(
+                    systemImage: "rectangle.stack",
+                    title: "还没有卡片",
+                    message: "收藏题目后可生成记忆卡片"
+                )
             } else {
                 List {
                     Section("到期复习") {
@@ -25,7 +24,7 @@ struct AnkiView: View {
                     Section("卡组") {
                         ForEach(decks, id: \.name) { deck in
                             HStack {
-                                VStack(alignment: .leading) {
+                                VStack(alignment: .leading, spacing: 2) {
                                     Text(deck.name).font(.subheadline.bold())
                                     if !deck.topTags.isEmpty {
                                         Text(deck.topTags.joined(separator: " · ")).font(.caption2).foregroundStyle(.appSecondary)
@@ -38,7 +37,7 @@ struct AnkiView: View {
                     }
                     Section("全部卡片") {
                         ForEach(appState.state.ankiCards, id: \.id) { card in
-                            VStack(alignment: .leading, spacing: 4) {
+                            VStack(alignment: .leading, spacing: AppTheme.Spacing.xs) {
                                 Text(card.front).font(.subheadline.bold())
                                 Text(card.back).font(.caption).foregroundStyle(.appSecondary).lineLimit(3)
                             }
@@ -47,7 +46,7 @@ struct AnkiView: View {
                 }
             }
         }
-        .background(Color.appBackground.ignoresSafeArea())
+        .background(AppTheme.background.ignoresSafeArea())
         .navigationTitle("Anki 测验")
         .navigationBarTitleDisplayMode(.inline)
     }

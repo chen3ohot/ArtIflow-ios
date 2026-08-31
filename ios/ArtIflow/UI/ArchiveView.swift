@@ -6,36 +6,37 @@ struct ArchiveView: View {
     var body: some View {
         Group {
             if appState.state.savedQuestions.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "books.vertical").font(.system(size: 44)).foregroundStyle(.appSecondary)
-                    Text("还没有收藏的题目").font(.headline)
-                    Text("在聊天里长按回答卡片即可收藏题目").font(.subheadline).foregroundStyle(.appSecondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                EmptyStateView(
+                    systemImage: "books.vertical",
+                    title: "还没有收藏的题目",
+                    message: "在聊天里长按回答卡片即可收藏题目"
+                )
             } else {
                 List {
                     ForEach(appState.state.savedQuestions, id: \.id) { saved in
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: AppTheme.Spacing.s) {
                             Text(saved.question).font(.headline).foregroundStyle(.appPrimary)
                             if !saved.knowledgeTags.isEmpty {
                                 HStack {
                                     ForEach(saved.knowledgeTags, id: \.self) { tag in
                                         Text(tag).font(.caption2).foregroundStyle(.white)
-                                            .padding(.horizontal, 8).padding(.vertical, 3)
+                                            .padding(.horizontal, AppTheme.Spacing.s).padding(.vertical, 3)
                                             .background(AppTheme.assistantAccent)
                                             .clipShape(Capsule())
                                     }
                                 }
                             }
                             MarkdownView(markdown: saved.answer, textColor: AppTheme.primaryText, fontSize: 15)
-                                .frame(minHeight: 40)
                         }
-                        .padding(.vertical, 6)
+                        .padding(.vertical, AppTheme.Spacing.xs)
+                        .listRowBackground(Color.clear)
                     }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
         }
-        .background(Color.appBackground.ignoresSafeArea())
+        .background(AppTheme.background.ignoresSafeArea())
         .navigationTitle("题目归档")
         .navigationBarTitleDisplayMode(.inline)
     }
