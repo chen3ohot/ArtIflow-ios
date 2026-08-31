@@ -634,3 +634,16 @@ private extension String {
         return isEmpty ? fallback() : self
     }
 }
+
+/// 由 detailId 向上回溯到段落根，返回 根→…→该追问 的完整路径（含该追问本身）
+func buildDetailPath(details: [SpanDetail], detailId: String) -> [SpanDetail] {
+    var path: [SpanDetail] = []
+    var currentId: String? = detailId
+    var visited = Set<String>()
+    while let id = currentId, !visited.contains(id), let d = details.first(where: { $0.id == id }) {
+        visited.insert(id)
+        path.append(d)
+        currentId = d.parentDetailId
+    }
+    return path.reversed()
+}

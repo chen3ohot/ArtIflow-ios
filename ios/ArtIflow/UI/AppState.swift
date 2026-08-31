@@ -183,7 +183,8 @@ final class AppState: ObservableObject {
         )
     }
 
-    func quickFollowup(spanId: String, question: String, isVoice: Bool) async {
+    /// 精细追问：parentDetailId 为空时挂在段落根下，否则挂在某条追问之下形成分层
+    func quickFollowup(spanId: String, question: String, isVoice: Bool, parentDetailId: String? = nil) async {
         guard let span = findSpanById(state.messages, spanId: spanId) else { return }
         let normalized = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return }
@@ -197,13 +198,48 @@ final class AppState: ObservableObject {
         let result = await arkClient.generateReplyStream(messages: messages, config: config, onDelta: { [weak self] delta in
             Task { @MainActor in self?.appendDetailDelta(spanId: spanId, detailId: detailId, delta: delta) }
         })
-        let detail = SpanDetail(id: detailId, mode: isVoice ? "语音追问" : "精细追问", time: nowTimeString(), question: normalized, answer: streamBuffer[detailId] ?? "", parentDetailId: nil, summary: nil)
+        let detail = SpanDetail(id: detailId, mode: isVoice ? "语音追问" : "精细追问", time: nowTimeString(), question: normalized, answer: streamBuffer[detailId] ?? "", parentDetailId: parentDetailId, summary: nil)
         streamBuffer.removeValue(forKey: detailId)
         deliverTokenAwareResult(result, requestToken: token, activeToken: requestToken,
             onStale: { },
             onSuccess: { [weak self] _ in Task { @MainActor in self?.finishSpanDetail(spanId: spanId, detail: detail) } },
             onFailure: { [weak self] error in Task { @MainActor in self?.failSpanDetail(spanId: spanId, error: error) } }
         )
+    }
+
+    // MARK: - 精细追问分层导航（对齐 Android openDetails / closeDetails / stepBackQuickFollowupLayer）
+
+    /// 在精细追问面板里聚焦到某条追问（用于钻取下一层）
+    func openDetails(spanId: String, detailId: String) {
+        state.selectedSpanId = spanId
+        state.selectedDetailId = detailId
+        state.quickFollowupSpanId = spanId
+        state.quickFollowupDetailId = detailId
+        persist()
+    }
+
+    /// 关闭当前钻取，回到段落根下的追问列表
+    func closeDetails() {
+        state.selectedDetailId = nil
+        state.quickFollowupDetailId = nil
+        persist()
+    }
+
+    /// 返回上一层：若有父追问则聚焦父追问，否则回到段落根
+    @discardableResult
+    func stepBackQuickFollowupLayer() -> Bool {
+        guard let spanId = state.quickFollowupSpanId, let detailId = state.quickFollowupDetailId else {
+            closeDetails(); return false
+        }
+        let details = state.histories[spanId] ?? []
+        if let current = details.first(where: { $0.id == detailId }), let parent = current.parentDetailId, !parent.isEmpty {
+            state.quickFollowupDetailId = parent
+            state.selectedDetailId = parent
+        } else {
+            closeDetails()
+        }
+        persist()
+        return true
     }
 
     // MARK: - Streaming accumulation
