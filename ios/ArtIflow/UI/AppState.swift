@@ -455,6 +455,207 @@ final class AppState: ObservableObject {
         persist()
     }
 
+    // MARK: - 教练每日训练（对齐 Android StudyCoach training flow）
+    private var trainingBuffer = ""
+
+    private func ensureCoachDigestCurrent() -> CoachDailyDigest {
+        let todayKey = currentCoachDateKey()
+        if let d = state.coachDigest, d.dateKey == todayKey { return d }
+        let digest = buildCoachDailyDigest(
+            messages: state.messages, histories: state.histories,
+            savedQuestions: state.savedQuestions, knowledgePoints: state.knowledgePoints
+        )
+        state.coachDigest = digest
+        persist()
+        return digest
+    }
+
+    private func isDailyTrainingStale(_ training: DailyTrainingState) -> Bool {
+        return !training.dateKey.isEmpty && training.dateKey != currentCoachDateKey()
+    }
+
+    func onCoachPageViewed() {
+        if isDailyTrainingStale(state.dailyTraining) { state.dailyTraining = DailyTrainingState() }
+        _ = ensureCoachDigestCurrent()
+    }
+
+    func sendCoachQuickAction(_ prompt: String) { Task { await sendCoachMessage(prompt) } }
+
+    func askCoachAboutRecommendation(_ question: CoachRecommendedQuestion) {
+        Task { await sendCoachMessage(buildCoachRecommendationFollowupPrompt(question)) }
+    }
+
+    func jumpToCoachRecommendationBasis(_ question: CoachRecommendedQuestion) {
+        guard let target = question.anchorSavedQuestionId, !target.isEmpty else {
+            toast = "这道题暂时还没有可跳转的依据题"; state.toastMessage = toast; return
+        }
+        guard state.savedQuestions.contains(where: { $0.id == target }) else {
+            toast = "依据题暂未归档完成"; state.toastMessage = toast; return
+        }
+        state.activePage = .archive
+        state.archiveFocusSavedQuestionId = target
+        state.toastMessage = "已跳到教练出题依据题"
+        toast = state.toastMessage
+        persist()
+    }
+
+    func startCoachTraining() async {
+        if state.isLoading { toast = "当前还有内容在生成，请稍等"; state.toastMessage = toast; return }
+        if !isDailyTrainingStale(state.dailyTraining) && state.dailyTraining.isActive {
+            state.activePage = .coach; return
+        }
+        let digest = ensureCoachDigestCurrent()
+        let rounds = buildCoachTrainingRounds(digest)
+        guard !rounds.isEmpty else { toast = "今日训练题暂时不可用"; state.toastMessage = toast; return }
+        state.activePage = .coach
+        state.input = ""
+        state.coachInput = ""
+        state.dailyTraining = DailyTrainingState(dateKey: digest.dateKey, rounds: rounds, currentIndex: 0, phase: .askingQuestion, currentQuestionText: "")
+        state.toastMessage = "已开始今日训练 · 正在出第1题"
+        toast = state.toastMessage
+        persist()
+        await launchDailyTrainingRound(rounds: rounds, roundIndex: 0)
+    }
+
+    func startCoachRecommendedTraining(_ question: CoachRecommendedQuestion) async {
+        if state.isLoading { toast = "当前还有内容在生成，请稍等"; state.toastMessage = toast; return }
+        let normalizedPrompt = question.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedPrompt.isEmpty else { toast = "这道推荐题暂时不可用"; state.toastMessage = toast; return }
+        let digest = ensureCoachDigestCurrent()
+        let fallbackTitle = digest.focusAreas.first?.point.map { "\($0) · 典型题" } ?? "教练推荐题"
+        let round = CoachRecommendedQuestion(
+            id: question.id,
+            title: question.title.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank { fallbackTitle },
+            reason: question.reason.trimmingCharacters(in: .whitespacesAndNewlines),
+            prompt: normalizedPrompt,
+            basis: question.basis,
+            anchorSavedQuestionId: question.anchorSavedQuestionId
+        )
+        state.activePage = .coach
+        state.input = ""
+        state.coachInput = ""
+        state.dailyTraining = DailyTrainingState(dateKey: digest.dateKey, rounds: [round], currentIndex: 0, phase: .askingQuestion, currentQuestionText: "")
+        state.toastMessage = "已开始针对性训练 · 正在出题"
+        toast = state.toastMessage
+        persist()
+        await launchDailyTrainingRound(rounds: [round], roundIndex: 0)
+    }
+
+    /// 生成今日训练的第 roundIndex 题（流式），完成后进入 AWAITING_ANSWER
+    private func launchDailyTrainingRound(rounds: [CoachRecommendedQuestion], roundIndex: Int) async {
+        guard rounds.indices.contains(roundIndex) else {
+            state.dailyTraining = DailyTrainingState(dateKey: currentCoachDateKey(), rounds: rounds, currentIndex: max(rounds.count - 1, 0), phase: .completed, currentQuestionText: "")
+            state.toastMessage = "今日训练已完成 🎉"; toast = state.toastMessage; persist(); return
+        }
+        let round = rounds[roundIndex]
+        requestToken += 1
+        let token = requestToken
+        let displayText = buildTrainingRoundDisplayText(round: round, roundIndex: roundIndex, totalRounds: rounds.count)
+        let displayUser = CoachChatMessage(id: nextMessageId(), role: .user, time: nowTimeString(), text: displayText)
+        let assistantId = nextMessageId()
+        let assistantTime = nowTimeString()
+        let placeholder = CoachChatMessage(id: assistantId, role: .assistant, time: assistantTime, text: "正在生成第\(roundIndex + 1)题...")
+        state.coachMessages = upsertCoachMessage(state.coachMessages, target: displayUser)
+        state.coachMessages = upsertCoachMessage(state.coachMessages, target: placeholder)
+        state.dailyTraining.phase = .askingQuestion
+        state.dailyTraining.currentQuestionText = ""
+        persist()
+        trainingBuffer = ""
+        let config = state.settings.toArkRuntimeConfig()
+        let result = await arkClient.generateReplyStream(messages: [ArkRequestMessage(role: "user", text: round.prompt)], config: config, onDelta: { [weak self] delta in
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.trainingBuffer += delta
+                let partial = self.trainingBuffer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "正在生成第\(roundIndex + 1)题..." : self.trainingBuffer
+                let partialMsg = CoachChatMessage(id: assistantId, role: .assistant, time: assistantTime, text: partial)
+                self.state.coachMessages = upsertCoachMessage(self.state.coachMessages, target: partialMsg)
+            }
+        })
+        deliverTokenAwareResult(result, requestToken: token, activeToken: requestToken,
+            onStale: { },
+            onSuccess: { [weak self] reply in Task { @MainActor in
+                guard let self = self else { return }
+                let resolved = reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? self.trainingBuffer.trimmingCharacters(in: .whitespacesAndNewlines) : reply
+                let msg = CoachChatMessage(id: assistantId, role: .assistant, time: assistantTime, text: resolved.isEmpty ? "（题目生成失败，请重试）" : resolved)
+                self.state.coachMessages = upsertCoachMessage(self.state.coachMessages, target: msg)
+                self.state.dailyTraining.phase = .awaitingAnswer
+                self.state.dailyTraining.currentQuestionText = resolved
+                self.state.toastMessage = "第\(roundIndex + 1)题已准备好，直接作答"
+                self.toast = self.state.toastMessage
+                self.trainingBuffer = ""
+                self.persist()
+            }},
+            onFailure: { [weak self] error in Task { @MainActor in
+                guard let self = self else { return }
+                self.state.coachMessages = self.state.coachMessages.filter { $0.id != assistantId }
+                self.state.dailyTraining = DailyTrainingState()
+                self.handleFailure(error)
+            }}
+        )
+    }
+
+    /// 提交训练作答：批改并进入下一轮或完成
+    func submitDailyTrainingAnswer(_ answer: String, fromCoachInput: Bool = false) async {
+        let training = state.dailyTraining
+        if isDailyTrainingStale(training) {
+            state.dailyTraining = DailyTrainingState()
+            state.toastMessage = "今日训练已过期，请重新开始"; toast = state.toastMessage; persist(); return
+        }
+        guard training.phase == .awaitingAnswer, let round = training.currentRound else { return }
+        let normalized = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return }
+        let userAnswer = CoachChatMessage(id: nextMessageId(), role: .user, time: nowTimeString(), text: normalized)
+        state.coachMessages = upsertCoachMessage(state.coachMessages, target: userAnswer)
+        if fromCoachInput { state.coachInput = "" }
+        let assistantId = nextMessageId()
+        let assistantTime = nowTimeString()
+        let placeholder = CoachChatMessage(id: assistantId, role: .assistant, time: assistantTime, text: "正在批改...")
+        state.coachMessages = upsertCoachMessage(state.coachMessages, target: placeholder)
+        state.dailyTraining.phase = .reviewingAnswer
+        persist()
+        let evalPrompt = buildTrainingEvaluationPrompt(round: round, trainingQuestion: training.currentQuestionText, studentAnswer: normalized)
+        requestToken += 1
+        let token = requestToken
+        trainingBuffer = ""
+        let config = state.settings.toArkRuntimeConfig()
+        let result = await arkClient.generateReplyStream(messages: [ArkRequestMessage(role: "user", text: evalPrompt)], config: config, onDelta: { [weak self] delta in
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.trainingBuffer += delta
+                let partial = self.trainingBuffer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "正在批改..." : self.trainingBuffer
+                let partialMsg = CoachChatMessage(id: assistantId, role: .assistant, time: assistantTime, text: partial)
+                self.state.coachMessages = upsertCoachMessage(self.state.coachMessages, target: partialMsg)
+            }
+        })
+        deliverTokenAwareResult(result, requestToken: token, activeToken: requestToken,
+            onStale: { },
+            onSuccess: { [weak self] reply in Task { @MainActor in
+                guard let self = self else { return }
+                let resolved = reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? self.trainingBuffer.trimmingCharacters(in: .whitespacesAndNewlines) : reply
+                let msg = CoachChatMessage(id: assistantId, role: .assistant, time: assistantTime, text: resolved.isEmpty ? "（批改失败）" : resolved)
+                self.state.coachMessages = upsertCoachMessage(self.state.coachMessages, target: msg)
+                self.trainingBuffer = ""
+                let nextIndex = self.state.dailyTraining.currentIndex + 1
+                if nextIndex >= self.state.dailyTraining.rounds.count {
+                    self.state.dailyTraining.phase = .completed
+                    self.state.toastMessage = "今日训练已完成 🎉"; self.toast = self.state.toastMessage
+                    self.persist()
+                } else {
+                    self.state.dailyTraining.currentIndex = nextIndex
+                    self.state.toastMessage = "进入第\(nextIndex + 1)题"; self.toast = self.state.toastMessage
+                    self.persist()
+                    await self.launchDailyTrainingRound(rounds: self.state.dailyTraining.rounds, roundIndex: nextIndex)
+                }
+            }},
+            onFailure: { [weak self] error in Task { @MainActor in
+                guard let self = self else { return }
+                self.state.coachMessages = self.state.coachMessages.filter { $0.id != assistantId }
+                self.state.dailyTraining.phase = .awaitingAnswer
+                self.handleFailure(error)
+            }}
+        )
+    }
+
     func reviewAnkiCard(_ card: AnkiCard, mastery: CardMasteryLevel) {
         guard let index = state.ankiCards.firstIndex(where: { $0.id == card.id }) else { return }
         let reviewed = applySrsReview(card, mastery: mastery)
