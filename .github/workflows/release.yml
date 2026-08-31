@@ -1,0 +1,78 @@
+name: Release IPA
+
+# 打以 v 开头的 tag（如 v1.0.0）时触发：构建未签名 .ipa 并发布到 GitHub Release
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-ipa:
+    name: Build & Release IPA
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          if [ -d /Applications/Xcode_15.3.app ]; then
+            sudo xcode-select -s /Applications/Xcode_15.3.app/Contents/Developer
+          else
+            sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | head -1)/Contents/Developer"
+          fi
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build app for iOS device (unsigned)
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project ArtIflow.xcodeproj \
+            -scheme ArtIflow \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build
+
+      - name: Package unsigned .app into .ipa
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find build/Build/Products -name 'ArtIflow.app' -type d | head -1)"
+          echo "Found app: $APP_PATH"
+          rm -rf Payload ArtIflow.ipa
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          # 生成最小的有效 iTenesart 套壳：Payload/ArtIflow.app 打包成 ArtIflow.ipa
+          zip -qry ArtIflow.ipa Payload
+          ls -lh ArtIflow.ipa
+
+      - name: Create GitHub Release and upload IPA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          gh release create "$TAG" ios/ArtIflow.ipa \
+            --title "$TAG" \
+            --notes "ArtIflow iOS（SwiftUI）未签名构建产物。
+
+          - 产物：ArtIflow.ipa（未签名，用于自签名 / 企业内部分发 / 逆向分析）
+          - 由 GitHub Action 在 macos-14 上通过 XcodeGen + xcodebuild 构建
+          - 安装到真机前需用你自己的签名证书/描述文件重签（如 iOS App Signer、fastlane 等）" \
+            --verify-tag
