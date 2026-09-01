@@ -529,8 +529,12 @@ func downscaleImageForUpload(_ data: Data, maxDimension: CGFloat = 2048, quality
         .applyingFilter("CIColorControls", parameters: [
             kCIInputBrightnessKey: 0.0,
             kCIInputContrastKey: 0.45,
-            kCIInputSaturationKey: 0.0,
-            kCIInputSharpnessKey: 0.35
+            kCIInputSaturationKey: 0.0
+        ])
+        // 用 UnsharpMask 单独做锐化（CIColorControls 没有锐度参数）
+        .applyingFilter("CIUnsharpMask", parameters: [
+            kCIInputRadiusKey: 2.5,
+            kCIInputIntensityKey: 0.6
         ])
     let context = CIContext(options: [.useSoftwareRenderer: false])
     if let outCG = context.createCGImage(enhanced, from: enhanced.extent) {

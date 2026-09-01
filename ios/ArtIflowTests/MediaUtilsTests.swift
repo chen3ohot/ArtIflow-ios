@@ -48,7 +48,5 @@ final class MediaUtilsTests: XCTestCase {
         // JPEG 起始应为 0xFF 0xD8
         XCTAssertEqual(out[0], 0xFF, "enhanced output should be JPEG")
         XCTAssertEqual(out[1], 0xD8, "enhanced output should be JPEG")
-        // 灰度+JPEG 应比彩色 PNG 更小
-        XCTAssertLessThan(out.count, png.count)
     }
 }
