@@ -1,6 +1,8 @@
 import Foundation
 #if canImport(UIKit)
 import UIKit
+import CoreImage
+import CoreImage.CIFilterBuiltins
 #endif
 
 // MARK: - FlowStudy sync client (data/FlowStudySyncClient.kt)
@@ -495,13 +497,20 @@ func toImagePayloads(_ imageBytesList: [Data]) -> [ImagePayload] {
 }
 
 #if canImport(UIKit)
-/// 上传前对图片做降采样+JPEG 压缩：把最长边限制在 maxDimension 内并以 JPEG 重新编码，
-/// 显著减小 base64 体积，避免网关因请求体过大而丢弃图片（模型回复“没收到图片”）。
-/// 解码失败时原样返回，保证不会因为压缩失败而丢失图片。
-func downscaleImageForUpload(_ data: Data, maxDimension: CGFloat = 1568, quality: CGFloat = 0.82) -> Data {
-    guard let image = UIImage(data: data) else { return data }
+/// 上传前对图片做“清晰度增强 + 体积压缩”处理。
+///
+/// 上传内容基本是题目照片（黑白文字），单纯降分辨率会让小字看不清。这里改为：
+/// 1. 先把最长边限制在 maxDimension（默认 2048，保留文字细节，不过度缩小）；
+/// 2. 转灰度（CIPhotoEffectMono）+ 提对比度/锐度（CIColorControls），
+///    把浅灰背景压白、笔迹加深，显著提升模型对印刷/手写题目的识别率；
+/// 3. 以灰度 JPEG 重新编码——黑白文字图灰度后体积远小于彩色，既清晰又不会
+///    因请求体过大被网关丢弃（避免模型回复“没收到图片”）。
+/// 任一步失败都原样返回，绝不丢图。
+func downscaleImageForUpload(_ data: Data, maxDimension: CGFloat = 2048, quality: CGFloat = 0.92) -> Data {
+    guard let image = UIImage(data: data), image.cgImage != nil else { return data }
+
+    // 1) 先按最长边降采样（保留足够分辨率给文字）
     let longestEdge = max(image.size.width, image.size.height)
-    // 超过最长边才缩小；无论是否缩小都重新 JPEG 编码以剥离元数据、统一格式并减小体积
     let scale = longestEdge > maxDimension ? maxDimension / longestEdge : 1.0
     let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
     let format = UIGraphicsImageRendererFormat()
@@ -509,6 +518,26 @@ func downscaleImageForUpload(_ data: Data, maxDimension: CGFloat = 1568, quality
     format.opaque = true
     let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
     let resized = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: targetSize)) }
+    guard let resizedCG = resized.cgImage else {
+        return resized.jpegData(compressionQuality: quality) ?? data
+    }
+
+    // 2) 灰度 + 对比度/锐度增强（题目为黑白文字，压白背景、加深笔迹）
+    let ci = CIImage(cgImage: resizedCG)
+    let enhanced = ci
+        .applyingFilter("CIPhotoEffectMono")
+        .applyingFilter("CIColorControls", parameters: [
+            kCIInputBrightnessKey: 0.0,
+            kCIInputContrastKey: 0.45,
+            kCIInputSaturationKey: 0.0,
+            kCIInputSharpnessKey: 0.35
+        ])
+    let context = CIContext(options: [.useSoftwareRenderer: false])
+    if let outCG = context.createCGImage(enhanced, from: enhanced.extent) {
+        let out = UIImage(cgImage: outCG)
+        return out.jpegData(compressionQuality: quality) ?? resized.jpegData(compressionQuality: quality) ?? data
+    }
+    // Core Image 不可用时退回灰度前的 JPEG
     return resized.jpegData(compressionQuality: quality) ?? data
 }
 #endif
