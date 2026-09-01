@@ -145,6 +145,10 @@ final class AppState: ObservableObject {
         requestToken += 1
         let token = requestToken
         state.isLoading = true
+        // 与文本提问一致：先建好流式占位 id，保证图片提问也能实时增量显示
+        streamAssistantId = nextMessageId()
+        streamSpanId = nextSpanId()
+        streamText = ""
         let config = state.settings.toArkRuntimeConfig()
         let imagePrompt = normalizeImagePrompt(state.settings.imagePrompt)
         let result = await arkClient.generateReplyWithImages(prompt: imagePrompt, images: images, config: config, stream: true, onDelta: { [weak self] delta in

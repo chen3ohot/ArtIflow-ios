@@ -192,10 +192,16 @@
     if (window.renderMathInElement) {
       try {
         renderMathInElement(root, {
+          // 覆盖常见 LaTeX 定界符：$$ 块、\[\] 块、\(\) 行内、$ 行内
+          // 模型常输出 \( ... \) 与 \[ ... \]，必须全部登记才能渲染
           delimiters: [
             { left: "$$", right: "$$", display: true },
+            { left: "\\[", right: "\\]", display: true },
+            { left: "\\(", right: "\\)", display: false },
             { left: "$", right: "$", display: false }
           ],
+          // 不把 $...$ 误判为货币：要求内部含反斜杠或 ^/_ 等数学符号
+          ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"],
           throwOnError: false
         });
       } catch (e) {}

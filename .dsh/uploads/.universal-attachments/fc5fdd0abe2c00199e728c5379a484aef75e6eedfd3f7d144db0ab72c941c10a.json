@@ -1,0 +1,63 @@
+{
+  "version": 4,
+  "sessionHash": "fc5fdd0abe2c00199e728c5379a484aef75e6eedfd3f7d144db0ab72c941c10a",
+  "updatedAt": 1788239753280,
+  "draft": null,
+  "pendingClaims": [],
+  "published": [
+    {
+      "rootId": "F5lidBFEEPfcNisju9fPf5gc",
+      "clientKey": "4de4e394-f476-4f6b-b133-ef5092d82eec",
+      "name": "IMG_1304.png",
+      "kind": "file",
+      "relPath": ".dsh/uploads/fc5fdd0abe2c00199e728c5379a484aef75e6eedfd3f7d144db0ab72c941c10a/20260901T051504527Z-F5lidBFEEPfcNisju9fPf5gc-IMG_1304.png",
+      "fileCount": 1,
+      "totalSize": 618685,
+      "createdAt": 1788239704521,
+      "aliases": [],
+      "entries": [
+        {
+          "entryId": "t4zQgz8R8ZVWIAcTVO6YR2sL",
+          "relativePath": "",
+          "safeRelativePath": "",
+          "name": "IMG_1304.png",
+          "size": 618685,
+          "mime": "image/png",
+          "lastModified": 1788239514000,
+          "received": 618685,
+          "status": "ready",
+          "relPath": ".dsh/uploads/fc5fdd0abe2c00199e728c5379a484aef75e6eedfd3f7d144db0ab72c941c10a/20260901T051504527Z-F5lidBFEEPfcNisju9fPf5gc-IMG_1304.png",
+          "fileDev": "60",
+          "fileIno": "4851162"
+        }
+      ]
+    },
+    {
+      "rootId": "wgMofCwh0Nj14ePJ6h_e4TVM",
+      "clientKey": "19e096e0-3827-4af4-b2a0-b7d17aedb12d",
+      "name": "IMG_1305.png",
+      "kind": "file",
+      "relPath": ".dsh/uploads/fc5fdd0abe2c00199e728c5379a484aef75e6eedfd3f7d144db0ab72c941c10a/20260901T051504529Z-wgMofCwh0Nj14ePJ6h_e4TVM-IMG_1305.png",
+      "fileCount": 1,
+      "totalSize": 462464,
+      "createdAt": 1788239704522,
+      "aliases": [],
+      "entries": [
+        {
+          "entryId": "asVaLsE2_6Kvgjbv6PbDtHyD",
+          "relativePath": "",
+          "safeRelativePath": "",
+          "name": "IMG_1305.png",
+          "size": 462464,
+          "mime": "image/png",
+          "lastModified": 1788239603000,
+          "received": 462464,
+          "status": "ready",
+          "relPath": ".dsh/uploads/fc5fdd0abe2c00199e728c5379a484aef75e6eedfd3f7d144db0ab72c941c10a/20260901T051504529Z-wgMofCwh0Nj14ePJ6h_e4TVM-IMG_1305.png",
+          "fileDev": "60",
+          "fileIno": "4851161"
+        }
+      ]
+    }
+  ]
+}
