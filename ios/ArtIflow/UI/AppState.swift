@@ -139,7 +139,10 @@ final class AppState: ObservableObject {
         let normalized = prompt.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank { "拍照搜题：请识别并讲解这道题" }
         guard !pendingImages.isEmpty else { return }
         let images = toImagePayloads(pendingImages)
-        let userMessage = ChatMessage.user(id: nextMessageId(), time: nowTimeString(), text: normalized, imagePreviewList: pendingImages)
+        // 立即清空输入区图片，避免生成期间缩略图一直挂在输入框上方
+        pendingImages = []
+        photoPickerItems = []
+        let userMessage = ChatMessage.user(id: nextMessageId(), time: nowTimeString(), text: normalized, imagePreviewList: images.map { $0.bytes })
         state = queueImageQuestionState(current: state, userMessage: userMessage, question: normalized, source: normalized)
         persist()
         requestToken += 1
@@ -1076,7 +1079,8 @@ final class AppState: ObservableObject {
         var failed = 0
         for item in photoPickerItems {
             if let data = try? await item.loadTransferable(type: Data.self) {
-                images.append(data)
+                // 上传前降采样+JPEG 压缩，避免大图被网关丢弃，同时降低内存占用
+                images.append(downscaleImageForUpload(data))
             } else {
                 failed += 1
             }

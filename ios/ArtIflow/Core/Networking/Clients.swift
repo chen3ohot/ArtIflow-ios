@@ -494,6 +494,25 @@ func toImagePayloads(_ imageBytesList: [Data]) -> [ImagePayload] {
         .map { ImagePayload(bytes: $0, mimeType: detectImageMimeType($0)) }
 }
 
+#if canImport(UIKit)
+/// 上传前对图片做降采样+JPEG 压缩：把最长边限制在 maxDimension 内并以 JPEG 重新编码，
+/// 显著减小 base64 体积，避免网关因请求体过大而丢弃图片（模型回复“没收到图片”）。
+/// 解码失败时原样返回，保证不会因为压缩失败而丢失图片。
+func downscaleImageForUpload(_ data: Data, maxDimension: CGFloat = 1568, quality: CGFloat = 0.82) -> Data {
+    guard let image = UIImage(data: data) else { return data }
+    let longestEdge = max(image.size.width, image.size.height)
+    // 超过最长边才缩小；无论是否缩小都重新 JPEG 编码以剥离元数据、统一格式并减小体积
+    let scale = longestEdge > maxDimension ? maxDimension / longestEdge : 1.0
+    let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    format.opaque = true
+    let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+    let resized = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: targetSize)) }
+    return resized.jpegData(compressionQuality: quality) ?? data
+}
+#endif
+
 private extension Data {
     func matchesSignature(_ signature: [UInt8], offset: Int = 0) -> Bool {
         guard count >= offset + signature.count else { return false }
